@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+out/
+dist/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+backend/dist/
+
+# Database
+*.db
+*.sqlite
+
+# Build artifacts
+tsconfig.web.tsbuildinfo
+
+# Claude Code memory
+.claude/
