@@ -30,3 +30,6 @@ tsconfig.web.tsbuildinfo
 
 # Claude Code memory
 .claude/
+
+# Secrets — never commit real credentials
+backend/.env

@@ -1,18 +1,36 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg:        #0d0f1a;
-  --color-surface:   #141728;
-  --color-surface-2: #1c2040;
-  --color-border:    #2a2f52;
-  --color-accent:    #cc2200;
+  --color-bg:           var(--bg);
+  --color-surface:      var(--surface);
+  --color-surface-2:    var(--surface-2);
+  --color-border:       var(--border);
+  --color-accent:       #cc2200;
   --color-accent-hover: #e02800;
-  --color-text:      #e8eaf0;
-  --color-muted:     #8890b0;
-  --color-alive:     #22c55e;
-  --color-fainted:   #ef4444;
-  --color-missed:    #6b7280;
-  --color-pending:   #f59e0b;
+  --color-text:         var(--text);
+  --color-muted:        var(--muted);
+  --color-alive:        #22c55e;
+  --color-fainted:      #ef4444;
+  --color-missed:       #6b7280;
+  --color-pending:      #f59e0b;
+}
+
+:root {
+  --bg:        #0d0f1a;
+  --surface:   #141728;
+  --surface-2: #1c2040;
+  --border:    #2a2f52;
+  --text:      #e8eaf0;
+  --muted:     #8890b0;
+}
+
+:root.light {
+  --bg:        #f2ede8;
+  --surface:   #faf8f5;
+  --surface-2: #ebe5de;
+  --border:    #d6cec7;
+  --text:      #28231e;
+  --muted:     #7d7068;
 }
 
 * {
@@ -20,8 +38,8 @@
 }
 
 body {
-  background-color: #0d0f1a;
-  color: #e8eaf0;
+  background-color: var(--bg);
+  color: var(--text);
   font-family: system-ui, -apple-system, sans-serif;
   margin: 0;
 }

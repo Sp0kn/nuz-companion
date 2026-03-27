@@ -40,6 +40,8 @@ export default function RunDetail() {
   const [showManageTypes, setShowManageTypes] = useState(false)
   const [assignEntry, setAssignEntry] = useState<QueuedNickname | null>(null)
   const [captureTarget, setCaptureTarget] = useState<CapturedPokemon | null>(null)
+  const [pokemonFilter, setPokemonFilter] = useState('')
+  const [queueFilter, setQueueFilter] = useState('')
 
   if (selectedRunId === null || !currentRun) {
     return (
@@ -59,6 +61,10 @@ export default function RunDetail() {
           const next = runs.find((r) => r.id !== selectedRunId)
           setSelectedRunId(next?.id ?? null)
         }} />
+
+      {currentRun.status !== 'active' && (
+        <RunSummary pokemonList={pokemonList} totalZones={zones.length} status={currentRun.status} />
+      )}
 
       <div className="grid grid-cols-[220px_1fr_300px] gap-5 items-start">
 
@@ -105,69 +111,108 @@ export default function RunDetail() {
             </button>
           </div>
 
+          <div className="relative mb-3">
+            <input
+              value={pokemonFilter}
+              onChange={(e) => setPokemonFilter(e.target.value)}
+              placeholder="Search by name, nickname, @username…"
+              className="w-full bg-surface-2 border border-border rounded-lg pl-3 pr-8 py-1.5 text-sm text-text placeholder:text-muted/50 focus:outline-none focus:border-accent"
+            />
+            {pokemonFilter && (
+              <button
+                onClick={() => setPokemonFilter('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted hover:text-text transition-colors text-xs"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
           {loadingPokemon ? (
             <Skeleton />
-          ) : pokemonList.filter((p) => p.status !== 'missed').length === 0 ? (
-            <Empty message="No Pokémon logged yet." />
-          ) : (
-            <div className="flex flex-col gap-2">
-              {[...pokemonList]
-                .filter((p) => p.status !== 'missed')
-                .sort((a, b) => {
-                  const order: Record<PokemonStatus, number> = { alive: 0, fainted: 1, missed: 2 }
-                  return order[a.status as PokemonStatus] - order[b.status as PokemonStatus]
-                })
-                .map((p) => (
+          ) : (() => {
+            const q = pokemonFilter.toLowerCase()
+            const filtered = [...pokemonList]
+              .filter((p) => p.status !== 'missed')
+              .filter((p) => !q || [p.pokemon_name, p.nickname, p.twitch_username].some((v) => v?.toLowerCase().includes(q)))
+              .sort((a, b) => {
+                const order: Record<PokemonStatus, number> = { alive: 0, fainted: 1, missed: 2 }
+                return order[a.status as PokemonStatus] - order[b.status as PokemonStatus]
+              })
+            return filtered.length === 0 ? (
+              <Empty message={pokemonFilter ? 'No Pokémon match your search.' : 'No Pokémon logged yet.'} />
+            ) : (
+              <div className="flex flex-col gap-2">
+                {filtered.map((p) => (
                   <PokemonRow key={p.id} pokemon={p} runId={selectedRunId} />
                 ))}
-            </div>
-          )}
+              </div>
+            )
+          })()}
         </section>
 
         {/* Nickname Queue */}
         <section>
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-3">
-              <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">
-                Nickname Queue
-              </h2>
-              <span className="text-xs bg-surface-2 border border-border text-muted px-2 py-0.5 rounded-full">
-                {queue.length}
-              </span>
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setShowManageTypes(true)}
-                className="text-xs text-muted hover:text-text transition-colors"
-              >
-                ⚙ Types
-              </button>
-              <button
-                onClick={() => setShowAddToQueue(true)}
-                className="text-xs font-semibold text-accent hover:text-accent-hover transition-colors"
-              >
-                + Add
-              </button>
-            </div>
-          </div>
+          {(() => {
+            const q = queueFilter.toLowerCase()
+            const matches = (e: QueuedNickname) => !q || [e.nickname, e.redeemed_by].some((v) => v?.toLowerCase().includes(q))
+            const pending = queue.filter((e) => e.status === 'pending' && matches(e))
+            const skipped = queue.filter((e) => e.status === 'skipped' && matches(e))
+            return (
+              <>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">Nickname Queue</h2>
+                    <span className="text-xs bg-surface-2 border border-border text-muted px-2 py-0.5 rounded-full">
+                      {pending.length}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => setShowManageTypes(true)} className="text-xs text-muted hover:text-text transition-colors">⚙ Types</button>
+                    <button onClick={() => setShowAddToQueue(true)} className="text-xs font-semibold text-accent hover:text-accent-hover transition-colors">+ Add</button>
+                  </div>
+                </div>
 
-          {loadingQueue ? (
-            <Skeleton />
-          ) : queue.length === 0 ? (
-            <Empty message="Queue is empty." />
-          ) : (
-            <div className="flex flex-col gap-2">
-              {queue.map((entry, i) => (
-                <QueueRow
-                  key={entry.id}
-                  entry={entry}
-                  position={i + 1}
-                  runId={selectedRunId}
-                  onAssign={() => setAssignEntry(entry)}
-                />
-              ))}
-            </div>
-          )}
+                <div className="relative mb-3">
+                  <input
+                    value={queueFilter}
+                    onChange={(e) => setQueueFilter(e.target.value)}
+                    placeholder="Search by nickname, @username…"
+                    className="w-full bg-surface-2 border border-border rounded-lg pl-3 pr-8 py-1.5 text-sm text-text placeholder:text-muted/50 focus:outline-none focus:border-accent"
+                  />
+                  {queueFilter && (
+                    <button
+                      onClick={() => setQueueFilter('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted hover:text-text transition-colors text-xs"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                {loadingQueue ? (
+                  <Skeleton />
+                ) : pending.length === 0 && skipped.length === 0 ? (
+                  <Empty message={queueFilter ? 'No entries match your search.' : 'Queue is empty.'} />
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {pending.map((entry, i) => (
+                      <QueueRow key={entry.id} entry={entry} position={i + 1} runId={selectedRunId} onAssign={() => setAssignEntry(entry)} />
+                    ))}
+                    {skipped.length > 0 && (
+                      <>
+                        {pending.length > 0 && <div className="border-t border-border my-1" />}
+                        <p className="text-xs text-muted uppercase tracking-wider px-1">Skipped</p>
+                        {skipped.map((entry) => (
+                          <QueueRow key={entry.id} entry={entry} position={null} runId={selectedRunId} onAssign={() => setAssignEntry(entry)} />
+                        ))}
+                      </>
+                    )}
+                  </div>
+                )}
+              </>
+            )
+          })()}
         </section>
       </div>
 
@@ -206,6 +251,24 @@ export default function RunDetail() {
 }
 
 // --- Notepad Icon ---
+
+function SkullIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" className={className} fill="currentColor">
+      <path d="M8 1a5.5 5.5 0 0 0-5.5 5.5c0 1.8.87 3.4 2.2 4.38V12.5a.5.5 0 0 0 .5.5h5.6a.5.5 0 0 0 .5-.5v-1.62A5.5 5.5 0 0 0 8 1ZM6 10a1 1 0 1 1 0-2 1 1 0 0 1 0 2Zm4 0a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z" />
+      <path d="M6 13h1v2H6zm3 0h1v2H9z" />
+    </svg>
+  )
+}
+
+function TrashIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" className={className} fill="currentColor">
+      <path d="M6.5 1.5a.5.5 0 0 0-.5.5v.5h4V2a.5.5 0 0 0-.5-.5h-3Z" />
+      <path d="M2 4a.5.5 0 0 0 0 1h.5l.8 8.1A1 1 0 0 0 4.3 14h7.4a1 1 0 0 0 1-.9L13.5 5H14a.5.5 0 0 0 0-1H2Zm4.5 2.5a.5.5 0 0 1 1 0v5a.5.5 0 0 1-1 0v-5Zm3 0a.5.5 0 0 1 1 0v5a.5.5 0 0 1-1 0v-5Z" />
+    </svg>
+  )
+}
 
 function NotepadIcon({ className }: { className?: string }) {
   return (
@@ -262,10 +325,72 @@ function NotesModal({ run, onClose }: { run: Run; onClose: () => void }) {
 
 // --- Run Header ---
 
-const RUN_STATUS_CONFIG: Record<RunStatus, { label: string; className: string }> = {
-  active:    { label: 'Active',    className: 'bg-alive/15 text-alive border-alive/30' },
-  completed: { label: 'Completed', className: 'bg-surface-2 text-muted border-border' },
-  failed:    { label: 'Failed',    className: 'bg-fainted/15 text-fainted border-fainted/30' },
+
+function RunSummary({ pokemonList, totalZones, status }: { pokemonList: CapturedPokemon[]; totalZones: number; status: 'completed' | 'failed' }) {
+  const alive = pokemonList.filter((p) => p.status === 'alive')
+  const fainted = pokemonList.filter((p) => p.status === 'fainted')
+  const missed = pokemonList.filter((p) => p.status === 'missed')
+  const encountered = pokemonList.length
+
+  const isCompleted = status === 'completed'
+  const accent = isCompleted ? 'border-alive/30 bg-alive/5' : 'border-fainted/30 bg-fainted/5'
+  const titleColor = isCompleted ? 'text-alive' : 'text-fainted'
+  const title = isCompleted ? '🏆 Run Completed!' : '💀 Run Failed'
+
+  return (
+    <div className={`rounded-xl border px-6 py-5 flex flex-col gap-4 ${accent}`}>
+      <p className={`text-sm font-bold ${titleColor}`}>{title}</p>
+
+      {/* Stat pills */}
+      <div className="flex gap-3 flex-wrap">
+        <StatPill label="Alive" value={alive.length} color="text-alive" />
+        <StatPill label="Fainted" value={fainted.length} color="text-fainted" />
+        <StatPill label="Missed" value={missed.length} color="text-muted" />
+        <StatPill label="Zones" value={totalZones > 0 ? `${encountered}/${totalZones}` : encountered} color="text-text" />
+      </div>
+
+      {/* Survivors */}
+      {alive.length > 0 && (
+        <div className="flex flex-col gap-1">
+          <p className="text-xs font-semibold text-muted uppercase tracking-wider">Survivors</p>
+          <div className="flex flex-wrap gap-2">
+            {alive.map((p) => (
+              <div key={p.id} className="flex items-center gap-1.5 bg-surface border border-border rounded-lg px-2.5 py-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-alive shrink-0" />
+                <span className="text-xs text-text font-medium">{p.nickname ?? p.pokemon_name}</span>
+                {p.nickname && <span className="text-xs text-muted">({p.pokemon_name})</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Fallen */}
+      {fainted.length > 0 && (
+        <div className="flex flex-col gap-1">
+          <p className="text-xs font-semibold text-muted uppercase tracking-wider">Fallen</p>
+          <div className="flex flex-wrap gap-2">
+            {fainted.map((p) => (
+              <div key={p.id} className="flex items-center gap-1.5 bg-surface border border-border rounded-lg px-2.5 py-1 opacity-60">
+                <span className="w-1.5 h-1.5 rounded-full bg-fainted shrink-0" />
+                <span className="text-xs text-text font-medium line-through">{p.nickname ?? p.pokemon_name}</span>
+                {p.nickname && <span className="text-xs text-muted">({p.pokemon_name})</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function StatPill({ label, value, color }: { label: string; value: number | string; color: string }) {
+  return (
+    <div className="flex flex-col items-center bg-surface border border-border rounded-lg px-4 py-2 min-w-[64px]">
+      <span className={`text-lg font-bold ${color}`}>{value}</span>
+      <span className="text-xs text-muted">{label}</span>
+    </div>
+  )
 }
 
 function RunHeader({ run, onDeleted }: { run: Run; onDeleted: () => void }) {
@@ -291,8 +416,6 @@ function RunHeader({ run, onDeleted }: { run: Run; onDeleted: () => void }) {
     mutationFn: () => api.runs.delete(run.id),
     onSuccess: () => { invalidate(); onDeleted() },
   })
-
-  const { label, className } = RUN_STATUS_CONFIG[run.status]
 
   const commitName = () => {
     const trimmed = nameValue.trim()
@@ -337,25 +460,26 @@ function RunHeader({ run, onDeleted }: { run: Run; onDeleted: () => void }) {
         </p>
       </div>
 
-      <span className={`text-xs font-medium px-2.5 py-1 rounded-full border shrink-0 ${className}`}>
-        {label}
-      </span>
-
-      {run.status === 'active' && (
-        <>
-          <button onClick={() => updateStatus('completed')} className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-border text-muted hover:text-alive hover:border-alive transition-colors shrink-0">
-            ✓ Complete
-          </button>
-          <button onClick={() => updateStatus('failed')} className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-border text-muted hover:text-fainted hover:border-fainted transition-colors shrink-0">
-            ✕ Fail
-          </button>
-        </>
-      )}
-      {run.status !== 'active' && (
-        <button onClick={() => updateStatus('active')} className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-border text-muted hover:text-text hover:border-muted transition-colors shrink-0">
-          ↩ Reactivate
-        </button>
-      )}
+      <div className="flex items-center bg-surface-2 border border-border rounded-lg p-1 gap-0.5 shrink-0">
+        {(['active', 'completed', 'failed'] as const).map((s) => {
+          const active = run.status === s
+          const colors: Record<string, string> = {
+            active: active ? 'bg-orange-500/20 text-orange-400 border-orange-500/30' : 'text-muted hover:text-text',
+            completed: active ? 'bg-alive/20 text-alive border-alive/30' : 'text-muted hover:text-text',
+            failed: active ? 'bg-fainted/20 text-fainted border-fainted/30' : 'text-muted hover:text-text',
+          }
+          const labels: Record<string, string> = { active: 'Active', completed: 'Completed', failed: 'Failed' }
+          return (
+            <button
+              key={s}
+              onClick={() => { if (!active) updateStatus(s) }}
+              className={`text-xs font-semibold px-3 py-1 rounded-md border transition-colors ${active ? `${colors[s]} border` : 'border-transparent'} ${colors[s]}`}
+            >
+              {labels[s]}
+            </button>
+          )
+        })}
+      </div>
 
       {confirmDelete ? (
         <div className="flex items-center gap-2 shrink-0">
@@ -366,7 +490,7 @@ function RunHeader({ run, onDeleted }: { run: Run; onDeleted: () => void }) {
           <button onClick={() => setConfirmDelete(false)} className="text-xs text-muted hover:text-text transition-colors">Cancel</button>
         </div>
       ) : (
-        <button onClick={() => setConfirmDelete(true)} className="text-xs text-muted hover:text-fainted transition-colors shrink-0" title="Delete run">🗑</button>
+        <button onClick={() => setConfirmDelete(true)} className="text-muted hover:text-fainted transition-colors shrink-0" title="Delete run"><TrashIcon className="w-3 h-3" /></button>
       )}
 
       {showNotes && (
@@ -599,17 +723,19 @@ function PokemonRow({ pokemon: p, runId }: { pokemon: CapturedPokemon; runId: nu
         </p>
       </div>
 
-      <div className="flex flex-col items-center shrink-0">
-        <button onClick={() => update({ impatience: p.impatience + 1 })} className="text-[10px] text-muted hover:text-text leading-none transition-colors opacity-0 group-hover:opacity-100">▲</button>
+      <div className="flex flex-row items-center gap-[5px] shrink-0">
         <span className="text-xs text-muted tabular-nums" title="Impatience">⚡{p.impatience}</span>
-        <button onClick={() => { if (p.impatience > 0) update({ impatience: p.impatience - 1 }) }} className={`text-[10px] leading-none transition-colors opacity-0 group-hover:opacity-100 ${p.impatience === 0 ? 'text-muted/25 cursor-default' : 'text-muted hover:text-text'}`}>▼</button>
+        <div className="flex flex-col opacity-0 group-hover:opacity-100 transition-opacity">
+          <button onClick={() => update({ impatience: p.impatience + 1 })} className="text-[10px] text-muted hover:text-text leading-none transition-colors">▲</button>
+          <button onClick={() => { if (p.impatience > 0) update({ impatience: p.impatience - 1 }) }} className={`text-[10px] leading-none transition-colors ${p.impatience === 0 ? 'text-muted/25 cursor-default' : 'text-muted hover:text-text'}`}>▼</button>
+        </div>
       </div>
 
       <div className="flex flex-col items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-auto">
         <button onClick={() => { setEditName(p.pokemon_name); setEditNickname(p.nickname ?? ''); setIsEditing(true) }} className="text-xs text-muted hover:text-text transition-colors" title="Edit">✏</button>
 
         {p.status === 'alive' && (
-          <button onClick={() => update({ status: 'fainted' })} className="text-xs text-muted hover:text-fainted transition-colors" title="Mark fainted">☠</button>
+          <button onClick={() => update({ status: 'fainted' })} className="text-muted hover:text-fainted transition-colors" title="Mark fainted"><SkullIcon className="w-3 h-3" /></button>
         )}
         {p.status === 'fainted' && (
           <button onClick={() => update({ status: 'alive' })} className="text-xs text-muted hover:text-alive transition-colors" title="Mark alive">↩</button>
@@ -621,7 +747,7 @@ function PokemonRow({ pokemon: p, runId }: { pokemon: CapturedPokemon; runId: nu
             <button onClick={() => setConfirmDelete(false)} className="text-xs text-muted hover:text-text transition-colors">✕</button>
           </div>
         ) : (
-          <button onClick={() => setConfirmDelete(true)} className="text-xs text-muted hover:text-fainted transition-colors" title="Delete">🗑</button>
+          <button onClick={() => setConfirmDelete(true)} className="text-muted hover:text-fainted transition-colors" title="Delete"><TrashIcon className="w-3 h-3" /></button>
         )}
       </div>
     </div>
@@ -644,36 +770,53 @@ function StatusBadge({ status }: { status: PokemonStatus }) {
 
 // --- Queue Row ---
 
-function QueueRow({ entry, position, runId, onAssign }: { entry: QueuedNickname; position: number; runId: number; onAssign: () => void }) {
+function QueueRow({ entry, position, runId, onAssign }: { entry: QueuedNickname; position: number | null; runId: number; onAssign: () => void }) {
   const queryClient = useQueryClient()
   const timeAgo = entry.redeemed_at ? formatTimeAgo(entry.redeemed_at) : null
+  const isSkipped = entry.status === 'skipped'
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['nicknameQueue', runId] })
 
   const { mutate: skip } = useMutation({
     mutationFn: () => api.nicknameQueue.update(entry.id, { status: 'skipped' }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['nicknameQueue', runId] }),
+    onSuccess: invalidate,
+  })
+
+  const { mutate: restore } = useMutation({
+    mutationFn: () => api.nicknameQueue.update(entry.id, { status: 'pending' }),
+    onSuccess: invalidate,
+  })
+
+  const { mutate: remove } = useMutation({
+    mutationFn: () => api.nicknameQueue.delete(entry.id),
+    onSuccess: invalidate,
   })
 
   return (
-    <div className="bg-surface border border-border rounded-lg px-3 py-2.5 flex items-center gap-3 group">
-      <span className="text-xs font-bold text-muted w-4 text-center shrink-0">{position}</span>
+    <div className={`bg-surface border border-border rounded-lg px-3 py-2.5 flex items-center gap-3 group ${isSkipped ? 'opacity-50' : ''}`}>
+      <span className="text-xs font-bold text-muted w-4 text-center shrink-0">
+        {position ?? '—'}
+      </span>
       <div className="flex-1 min-w-0">
-        <p className="font-semibold text-sm text-text truncate">"{entry.nickname}"</p>
+        <p className={`font-semibold text-sm truncate ${isSkipped ? 'text-muted line-through' : 'text-text'}`}>"{entry.nickname}"</p>
         <div className="flex items-center gap-1.5 mt-0.5">
-          <span
-            className="text-xs font-medium"
-            style={{ color: entry.redemption_type.color }}
-          >
+          <span className="text-xs font-medium" style={{ color: entry.redemption_type.color }}>
             {entry.redemption_type.name}
           </span>
-          {entry.redeemed_by && (
-            <span className="text-xs text-muted">· @{entry.redeemed_by}</span>
-          )}
+          {entry.redeemed_by && <span className="text-xs text-muted">· @{entry.redeemed_by}</span>}
         </div>
         {timeAgo && <p className="text-xs text-muted mt-0.5">{timeAgo}</p>}
       </div>
       <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-        <button onClick={onAssign} className="text-xs font-semibold text-muted hover:text-accent transition-colors">Assign</button>
-        <button onClick={() => skip()} className="text-xs text-muted hover:text-fainted transition-colors" title="Skip">✕</button>
+        {isSkipped ? (
+          <button onClick={() => restore()} className="text-xs font-semibold text-muted hover:text-text transition-colors">Restore</button>
+        ) : (
+          <>
+            <button onClick={onAssign} className="text-xs font-semibold text-muted hover:text-accent transition-colors">Assign</button>
+            <button onClick={() => skip()} className="text-xs text-muted hover:text-pending transition-colors">Skip</button>
+          </>
+        )}
+        <button onClick={() => remove()} className="text-xs text-muted hover:text-fainted transition-colors">Delete</button>
       </div>
     </div>
   )

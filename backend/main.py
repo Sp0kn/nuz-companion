@@ -5,7 +5,9 @@ from sqlalchemy import text
 
 from database import engine
 from seed import seed
-from routers import games, zones, runs, pokemon, redemption_types, nickname_queue, pokemon_dex
+from routers import games, zones, runs, pokemon, redemption_types, nickname_queue, pokemon_dex, twitch
+from twitch_service import twitch_service
+from models import TwitchConfig
 
 
 def run_migrations():
@@ -51,13 +53,68 @@ def run_migrations():
             conn.execute(text("DROP TABLE run_pokemon"))
             conn.execute(text("ALTER TABLE run_pokemon_new RENAME TO run_pokemon"))
             conn.commit()
+        try:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS twitch_config (
+                    id INTEGER PRIMARY KEY,
+                    channel_name VARCHAR NOT NULL DEFAULT '',
+                    bot_username VARCHAR NOT NULL DEFAULT 'NUZcompanion',
+                    bot_access_token VARCHAR,
+                    streamer_access_token VARCHAR,
+                    streamer_refresh_token VARCHAR,
+                    streamer_user_id VARCHAR,
+                    streamer_display_name VARCHAR
+                )
+            """))
+            conn.commit()
+        except Exception:
+            pass
+        # Migrate old twitch_config columns if they exist
+        for col in ["streamer_user_id", "streamer_display_name", "bot_access_token"]:
+            try:
+                conn.execute(text(f"ALTER TABLE twitch_config ADD COLUMN {col} VARCHAR"))
+                conn.commit()
+            except Exception:
+                pass
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     run_migrations()
     seed()
+    # Init Twitch service
+    from database import SessionLocal
+    import config as app_config
+    db = SessionLocal()
+    try:
+        twitch_cfg = db.query(TwitchConfig).filter(TwitchConfig.id == 1).first()
+        if not twitch_cfg:
+            twitch_cfg = TwitchConfig(id=1, channel_name="", bot_username=app_config.BOT_USERNAME)
+            db.add(twitch_cfg)
+            db.commit()
+            db.refresh(twitch_cfg)
+
+        async def save_bot_token(token: str):
+            with SessionLocal() as s:
+                cfg = s.query(TwitchConfig).filter(TwitchConfig.id == 1).first()
+                if cfg:
+                    cfg.bot_access_token = token
+                    s.commit()
+
+        async def save_streamer_token(token: str):
+            with SessionLocal() as s:
+                cfg = s.query(TwitchConfig).filter(TwitchConfig.id == 1).first()
+                if cfg:
+                    cfg.streamer_access_token = token
+                    s.commit()
+
+        await twitch_service.init_bot_token(twitch_cfg.bot_access_token, on_refreshed=save_bot_token)
+        if twitch_cfg.streamer_access_token:
+            await twitch_service.start(twitch_cfg, on_streamer_refreshed=save_streamer_token)
+    finally:
+        db.close()
     yield
+    await twitch_service.stop()
 
 
 app = FastAPI(title="Nuz Companion API", lifespan=lifespan)
@@ -76,6 +133,7 @@ app.include_router(pokemon.router)
 app.include_router(redemption_types.router)
 app.include_router(nickname_queue.router)
 app.include_router(pokemon_dex.router)
+app.include_router(twitch.router)
 
 
 @app.get("/health")

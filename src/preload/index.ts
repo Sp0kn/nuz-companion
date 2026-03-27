@@ -1,5 +1,7 @@
-import { contextBridge } from 'electron'
+import { contextBridge, ipcRenderer } from 'electron'
 
-// Expose a typed API to the renderer via window.api
-// Add IPC methods here as needed
-contextBridge.exposeInMainWorld('api', {})
+contextBridge.exposeInMainWorld('electronAPI', {
+  backupDb: () => ipcRenderer.invoke('db:backup'),
+  restoreDb: () => ipcRenderer.invoke('db:restore'),
+  twitchOpenAuth: (url: string) => ipcRenderer.invoke('twitch:open-auth', url),
+})

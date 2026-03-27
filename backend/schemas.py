@@ -150,3 +150,21 @@ class QueuedNicknameOut(BaseModel):
     redemption_type: RedemptionTypeOut
 
     model_config = {"from_attributes": True}
+
+
+class TwitchConfigOut(BaseModel):
+    channel_name: str
+    streamer_display_name: str | None
+    has_streamer_token: bool
+    has_bot_token: bool
+
+    model_config = {"from_attributes": True}
+
+    @classmethod
+    def from_orm_masked(cls, obj):
+        return cls(
+            channel_name=obj.channel_name,
+            streamer_display_name=getattr(obj, "streamer_display_name", None),
+            has_streamer_token=bool(obj.streamer_access_token),
+            has_bot_token=bool(obj.bot_access_token),
+        )

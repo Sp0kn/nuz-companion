@@ -115,6 +115,21 @@ class QueuedNicknameStatus(str, enum.Enum):
     skipped = "skipped"
 
 
+class TwitchConfig(Base):
+    __tablename__ = "twitch_config"
+
+    id: Mapped[int] = mapped_column(primary_key=True, default=1)
+    channel_name: Mapped[str] = mapped_column(String, default="", nullable=False)
+    bot_username: Mapped[str] = mapped_column(String, default="NUZcompanion", nullable=False)
+    # Bot token — managed by the app, sourced from config.py
+    bot_access_token: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Streamer token — set by the user via OAuth
+    streamer_access_token: Mapped[str | None] = mapped_column(String, nullable=True)
+    streamer_refresh_token: Mapped[str | None] = mapped_column(String, nullable=True)
+    streamer_user_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    streamer_display_name: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
 class QueuedNickname(Base):
     __tablename__ = "nickname_queue"
 

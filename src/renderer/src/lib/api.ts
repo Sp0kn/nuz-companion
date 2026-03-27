@@ -33,6 +33,13 @@ async function del(path: string): Promise<void> {
 
 // --- Types ---
 
+export interface TwitchConfig {
+  channel_name: string
+  streamer_display_name: string | null
+  has_streamer_token: boolean
+  has_bot_token: boolean
+}
+
 export type RunStatus = 'active' | 'completed' | 'failed'
 export type PokemonStatus = 'alive' | 'fainted' | 'missed'
 export type QueuedNicknameStatus = 'pending' | 'assigned' | 'skipped'
@@ -122,11 +129,12 @@ export const api = {
   },
   nicknameQueue: {
     list: (runId: number) =>
-      get<QueuedNickname[]>(`/nickname-queue?run_id=${runId}&status=pending`),
+      get<QueuedNickname[]>(`/nickname-queue?run_id=${runId}`),
     create: (body: { run_id: number; redemption_type_id: number; nickname: string; redeemed_by?: string; redeemed_at?: string }) =>
       post<QueuedNickname>('/nickname-queue', body),
     update: (id: number, body: { status?: QueuedNicknameStatus; assigned_to_id?: number }) =>
       patch<QueuedNickname>(`/nickname-queue/${id}`, body),
+    delete: (id: number) => del(`/nickname-queue/${id}`),
   },
   redemptionTypes: {
     list: (runId: number) => get<RedemptionType[]>(`/redemption-types?run_id=${runId}`),
@@ -137,5 +145,14 @@ export const api = {
     reorder: (ids: number[]) =>
       post<RedemptionType[]>('/redemption-types/reorder', { ids }),
     delete: (id: number) => del(`/redemption-types/${id}`),
+  },
+  twitch: {
+    getConfig: () => get<TwitchConfig>('/twitch/config'),
+    getAuthUrl: () => get<{ url: string; code_verifier: string }>('/twitch/auth/url'),
+    exchangeCode: (code: string, codeVerifier: string) => post<TwitchConfig>('/twitch/auth/exchange', { code, code_verifier: codeVerifier }),
+    pasteToken: (token: string) => post<TwitchConfig>('/twitch/auth/paste-token', { token }),
+    disconnect: () => del('/twitch/auth/streamer'),
+    getStatus: () => get<{ irc_connected: boolean; eventsub_connected: boolean }>('/twitch/status'),
+    sendChat: (message: string) => post<{ success: boolean }>('/twitch/chat', { message }),
   },
 }
