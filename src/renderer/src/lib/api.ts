@@ -1,8 +1,18 @@
 const BASE = 'http://localhost:8000'
 
+async function parseError(res: Response): Promise<never> {
+  try {
+    const data = await res.json()
+    if (data?.detail) throw new Error(typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail))
+  } catch (e) {
+    if (e instanceof Error && e.message !== 'Failed to fetch') throw e
+  }
+  throw new Error(`Server error (${res.status})`)
+}
+
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`)
-  if (!res.ok) throw new Error(`API error ${res.status}`)
+  if (!res.ok) await parseError(res)
   return res.json()
 }
 
@@ -12,7 +22,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
-  if (!res.ok) throw new Error(`API error ${res.status}`)
+  if (!res.ok) await parseError(res)
   return res.json()
 }
 
@@ -22,13 +32,15 @@ async function patch<T>(path: string, body: unknown): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
-  if (!res.ok) throw new Error(`API error ${res.status}`)
+  if (!res.ok) await parseError(res)
   return res.json()
 }
 
-async function del(path: string): Promise<void> {
+async function del<T = void>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`, { method: 'DELETE' })
-  if (!res.ok) throw new Error(`API error ${res.status}`)
+  if (!res.ok) await parseError(res)
+  if (res.status === 204) return undefined as T
+  return res.json()
 }
 
 // --- Types ---
@@ -38,6 +50,17 @@ export interface TwitchConfig {
   streamer_display_name: string | null
   has_streamer_token: boolean
   has_bot_token: boolean
+}
+
+export interface TwitchRewardsConfig {
+  nickname_reward_id: string | null
+  nickname_reward_cost: number
+  impatience_reward_id: string | null
+  impatience_reward_cost: number
+  impatience_points_normal: number
+  impatience_points_vip: number
+  impatience_points_sub: number
+  impatience_priority: string  // "sub,vip,normal"
 }
 
 export type RunStatus = 'active' | 'completed' | 'failed'
@@ -78,8 +101,22 @@ export interface CapturedPokemon {
   twitch_username: string | null
   status: PokemonStatus
   impatience: number
+  on_team: boolean
   created_at: string
   zone: Zone
+}
+
+export interface AppSettings {
+  image_output_path: string | null
+}
+
+export interface RunLevelCap {
+  id: number
+  run_id: number
+  sort_order: number
+  milestone: string
+  level: number
+  is_cleared: boolean
 }
 
 export interface RedemptionType {
@@ -123,9 +160,21 @@ export const api = {
     list: (runId: number) => get<CapturedPokemon[]>(`/pokemon?run_id=${runId}`),
     create: (body: { run_id: number; zone_id: number; pokemon_name: string; nickname?: string; status?: PokemonStatus }) =>
       post<CapturedPokemon>('/pokemon', body),
-    update: (id: number, body: { pokemon_name?: string; nickname?: string | null; twitch_username?: string | null; status?: PokemonStatus; impatience?: number }) =>
+    update: (id: number, body: { pokemon_name?: string; nickname?: string | null; twitch_username?: string | null; status?: PokemonStatus; impatience?: number; on_team?: boolean }) =>
       patch<CapturedPokemon>(`/pokemon/${id}`, body),
     delete: (id: number) => del(`/pokemon/${id}`),
+    roll: (runId: number, count: number, includeTeam: boolean) =>
+      post<CapturedPokemon[]>('/pokemon/roll', { run_id: runId, count, include_team: includeTeam }),
+    confirmTeam: (runId: number, teamIds: number[]) =>
+      post<CapturedPokemon[]>('/pokemon/confirm-team', { run_id: runId, team_ids: teamIds }),
+  },
+  runLevelCaps: {
+    list: (runId: number) => get<RunLevelCap[]>(`/run-level-caps?run_id=${runId}`),
+    create: (body: { run_id: number; milestone: string; level: number; sort_order?: number }) =>
+      post<RunLevelCap>('/run-level-caps', body),
+    update: (id: number, body: { milestone?: string; level?: number; is_cleared?: boolean; sort_order?: number }) =>
+      patch<RunLevelCap>(`/run-level-caps/${id}`, body),
+    delete: (id: number) => del(`/run-level-caps/${id}`),
   },
   nicknameQueue: {
     list: (runId: number) =>
@@ -146,6 +195,10 @@ export const api = {
       post<RedemptionType[]>('/redemption-types/reorder', { ids }),
     delete: (id: number) => del(`/redemption-types/${id}`),
   },
+  appSettings: {
+    get: () => get<AppSettings>('/app-settings/'),
+    update: (body: Partial<AppSettings>) => patch<AppSettings>('/app-settings/', body),
+  },
   twitch: {
     getConfig: () => get<TwitchConfig>('/twitch/config'),
     getAuthUrl: () => get<{ url: string; code_verifier: string }>('/twitch/auth/url'),
@@ -154,5 +207,14 @@ export const api = {
     disconnect: () => del('/twitch/auth/streamer'),
     getStatus: () => get<{ irc_connected: boolean; eventsub_connected: boolean }>('/twitch/status'),
     sendChat: (message: string) => post<{ success: boolean }>('/twitch/chat', { message }),
+    setCurrentRun: (runId: number | null) => patch<{ current_run_id: number | null }>('/twitch/current-run', { run_id: runId }),
+    getRewards: () => get<TwitchRewardsConfig>('/twitch/rewards'),
+    updateRewards: (body: Partial<TwitchRewardsConfig>) => patch<TwitchRewardsConfig>('/twitch/rewards', body),
+    createNicknameReward: () => post<TwitchRewardsConfig>('/twitch/rewards/nickname', {}),
+    updateNicknameReward: (cost: number) => patch<TwitchRewardsConfig>('/twitch/rewards/nickname', { cost }),
+    deleteNicknameReward: () => del<TwitchRewardsConfig>('/twitch/rewards/nickname'),
+    createImpatienceReward: () => post<TwitchRewardsConfig>('/twitch/rewards/impatience', {}),
+    updateImpatienceReward: (cost: number) => patch<TwitchRewardsConfig>('/twitch/rewards/impatience', { cost }),
+    deleteImpatienceReward: () => del<TwitchRewardsConfig>('/twitch/rewards/impatience'),
   },
 }

@@ -42,6 +42,7 @@ export default function RunDetail() {
   const [captureTarget, setCaptureTarget] = useState<CapturedPokemon | null>(null)
   const [pokemonFilter, setPokemonFilter] = useState('')
   const [queueFilter, setQueueFilter] = useState('')
+  const [showRoll, setShowRoll] = useState(false)
 
   if (selectedRunId === null || !currentRun) {
     return (
@@ -70,31 +71,31 @@ export default function RunDetail() {
 
         {/* Zone List — compact sidebar */}
         <section>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">Zones</h2>
-          </div>
-          <div className="flex flex-col gap-1">
-            {zones.length === 0 ? (
-              <p className="text-xs text-muted italic px-1">No zones.</p>
-            ) : (
-              zones.map((z) => {
-                const p = pokemonByZone.get(z.id)
-                return (
-                  <ZoneCompactRow
-                    key={z.id}
-                    zone={z}
-                    pokemon={p}
-                    runId={selectedRunId}
-                    onLog={() => { setLogZoneId(z.id); setShowLogPokemon(true) }}
-                    onCapture={(pk) => setCaptureTarget(pk)}
-                  />
-                )
-              })
-            )}
-          </div>
-          <p className="text-xs text-muted mt-2 tabular-nums">
-            {caught}/{zones.length} caught
-          </p>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">Zones</h2>
+            </div>
+            <div className="flex flex-col gap-1">
+              {zones.length === 0 ? (
+                <p className="text-xs text-muted italic px-1">No zones.</p>
+              ) : (
+                zones.map((z) => {
+                  const p = pokemonByZone.get(z.id)
+                  return (
+                    <ZoneCompactRow
+                      key={z.id}
+                      zone={z}
+                      pokemon={p}
+                      runId={selectedRunId}
+                      onLog={() => { setLogZoneId(z.id); setShowLogPokemon(true) }}
+                      onCapture={(pk) => setCaptureTarget(pk)}
+                    />
+                  )
+                })
+              )}
+            </div>
+            <p className="text-xs text-muted mt-2 tabular-nums">
+              {caught}/{zones.length} caught
+            </p>
         </section>
 
         {/* Captured Pokémon — main section */}
@@ -103,12 +104,20 @@ export default function RunDetail() {
             <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">
               Captured Pokémon
             </h2>
-            <button
-              onClick={() => { setLogZoneId(undefined); setShowLogPokemon(true) }}
-              className="text-xs font-semibold text-accent hover:text-accent-hover transition-colors"
-            >
-              + Log Pokémon
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowRoll(true)}
+                className="text-xs font-semibold text-muted hover:text-text transition-colors"
+              >
+                ⚄ Roll
+              </button>
+              <button
+                onClick={() => { setLogZoneId(undefined); setShowLogPokemon(true) }}
+                className="text-xs font-semibold text-accent hover:text-accent-hover transition-colors"
+              >
+                + Log Pokémon
+              </button>
+            </div>
           </div>
 
           <div className="relative mb-3">
@@ -136,16 +145,32 @@ export default function RunDetail() {
               .filter((p) => p.status !== 'missed')
               .filter((p) => !q || [p.pokemon_name, p.nickname, p.twitch_username].some((v) => v?.toLowerCase().includes(q)))
               .sort((a, b) => {
-                const order: Record<PokemonStatus, number> = { alive: 0, fainted: 1, missed: 2 }
-                return order[a.status as PokemonStatus] - order[b.status as PokemonStatus]
+                const order = (p: CapturedPokemon) => {
+                  if (p.status === 'alive' && p.on_team) return 0
+                  if (p.status === 'alive') return 1
+                  if (p.status === 'fainted') return 2
+                  return 3
+                }
+                return order(a) - order(b)
               })
-            return filtered.length === 0 ? (
-              <Empty message={pokemonFilter ? 'No Pokémon match your search.' : 'No Pokémon logged yet.'} />
-            ) : (
+            if (filtered.length === 0) {
+              return <Empty message={pokemonFilter ? 'No Pokémon match your search.' : 'No Pokémon logged yet.'} />
+            }
+            const teamPokemon = filtered.filter((p) => p.status === 'alive' && p.on_team)
+            const restPokemon = filtered.filter((p) => !(p.status === 'alive' && p.on_team))
+            return (
               <div className="flex flex-col gap-2">
-                {filtered.map((p) => (
-                  <PokemonRow key={p.id} pokemon={p} runId={selectedRunId} />
-                ))}
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-muted/60 px-1 pt-1">Current Team</p>
+                {teamPokemon.length === 0
+                  ? <p className="text-xs text-muted/40 italic px-1 pb-1">No Pokémon on the team yet.</p>
+                  : teamPokemon.map((p) => <PokemonRow key={p.id} pokemon={p} runId={selectedRunId} />)
+                }
+                <div className="border-t border-border/50 mt-1" />
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-muted/60 px-1 pt-1">Not On Team</p>
+                {restPokemon.length === 0
+                  ? <p className="text-xs text-muted/40 italic px-1 pb-1">All Pokémon are on the team!</p>
+                  : restPokemon.map((p) => <PokemonRow key={p.id} pokemon={p} runId={selectedRunId} />)
+                }
               </div>
             )
           })()}
@@ -244,6 +269,13 @@ export default function RunDetail() {
           pokemon={captureTarget}
           runId={selectedRunId}
           onClose={() => setCaptureTarget(null)}
+        />
+      )}
+      {showRoll && (
+        <RollModal
+          runId={selectedRunId}
+          pokemonList={pokemonList}
+          onClose={() => setShowRoll(false)}
         />
       )}
     </div>
@@ -641,6 +673,7 @@ function PokemonRow({ pokemon: p, runId }: { pokemon: CapturedPokemon; runId: nu
   const [isEditing, setIsEditing] = useState(false)
   const [editName, setEditName] = useState(p.pokemon_name)
   const [editNickname, setEditNickname] = useState(p.nickname ?? '')
+  const [editTwitchUsername, setEditTwitchUsername] = useState(p.twitch_username ?? '')
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['pokemon', runId] })
@@ -658,7 +691,8 @@ function PokemonRow({ pokemon: p, runId }: { pokemon: CapturedPokemon; runId: nu
   const commitEdit = () => {
     const name = editName.trim()
     const nick = editNickname.trim()
-    if (name) update({ pokemon_name: name, nickname: nick || null })
+    const twitch = editTwitchUsername.trim()
+    if (name) update({ pokemon_name: name, nickname: nick || null, twitch_username: twitch || null })
     setIsEditing(false)
   }
 
@@ -666,32 +700,67 @@ function PokemonRow({ pokemon: p, runId }: { pokemon: CapturedPokemon; runId: nu
   const fainted = p.status === 'fainted'
 
   if (isEditing) {
+    const onKey = (e: React.KeyboardEvent) => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') setIsEditing(false) }
     return (
-      <div className="bg-surface border border-accent rounded-lg px-4 py-2.5 flex items-center gap-3">
-        <span className="w-16 h-16 shrink-0" />
-        <PokemonCombobox
-          value={editName}
-          onChange={setEditName}
-          placeholder="Pokémon name"
-          autoFocus
-          className="flex-1 bg-surface-2 border border-border rounded-md px-2 py-1 text-sm text-text focus:outline-none focus:border-accent min-w-0"
-          onKeyDown={(e) => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') setIsEditing(false) }}
-        />
-        <input
-          value={editNickname}
-          onChange={(e) => setEditNickname(e.target.value)}
-          placeholder="Nickname"
-          className="w-28 bg-surface-2 border border-border rounded-md px-2 py-1 text-sm text-text focus:outline-none focus:border-accent"
-          onKeyDown={(e) => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') setIsEditing(false) }}
-        />
-        <button onClick={commitEdit} disabled={saving} className="text-xs text-alive hover:text-alive/80 transition-colors shrink-0">✓</button>
-        <button onClick={() => setIsEditing(false)} className="text-xs text-muted hover:text-text transition-colors shrink-0">✕</button>
+      <div className="bg-surface border border-accent rounded-lg px-4 py-2.5 flex flex-col gap-2">
+        {/* Row 1 — species + actions */}
+        <div className="flex items-center gap-3">
+          <span className="w-[14px] shrink-0" />
+          <span className="w-16 shrink-0" />
+          <PokemonCombobox
+            value={editName}
+            onChange={setEditName}
+            placeholder="Pokémon name"
+            autoFocus
+            className="flex-1 bg-surface-2 border border-border rounded-md px-2 py-1 text-sm text-text focus:outline-none focus:border-accent min-w-0"
+            onKeyDown={onKey}
+          />
+          <button onClick={commitEdit} disabled={saving} className="text-xs text-alive hover:text-alive/80 transition-colors shrink-0">✓</button>
+          <button onClick={() => setIsEditing(false)} className="text-xs text-muted hover:text-text transition-colors shrink-0">✕</button>
+        </div>
+        {/* Row 2 — nickname + twitch username */}
+        <div className="flex items-center gap-3">
+          <span className="w-[14px] shrink-0" />
+          <span className="w-16 shrink-0" />
+          <input
+            value={editNickname}
+            onChange={(e) => setEditNickname(e.target.value)}
+            placeholder="Nickname"
+            className="flex-1 bg-surface-2 border border-border rounded-md px-2 py-1 text-sm text-text focus:outline-none focus:border-accent min-w-0"
+            onKeyDown={onKey}
+          />
+          <div className="flex items-center flex-1 min-w-0 bg-surface-2 border border-border rounded-md focus-within:border-accent">
+            <span className="pl-2 text-sm text-muted/50 select-none">@</span>
+            <input
+              value={editTwitchUsername}
+              onChange={(e) => setEditTwitchUsername(e.target.value)}
+              placeholder="Twitch username"
+              className="flex-1 bg-transparent px-1.5 py-1 text-sm text-text focus:outline-none min-w-0"
+              onKeyDown={onKey}
+            />
+          </div>
+          {/* spacer to align with the ✓ ✕ buttons above */}
+          <span className="w-[28px] shrink-0" />
+        </div>
       </div>
     )
   }
 
   return (
     <div className="bg-surface border border-border rounded-lg px-4 py-3 flex items-center gap-4 group">
+      {/* Vertical team toggle */}
+      {p.status === 'alive' ? (
+        <button
+          onClick={() => update({ on_team: !p.on_team })}
+          className={`relative shrink-0 w-[14px] h-8 rounded-full transition-colors duration-200 cursor-pointer hover:opacity-80 ${p.on_team ? 'bg-accent' : 'bg-surface-2 border border-border'}`}
+          title={p.on_team ? 'Remove from team' : 'Add to team'}
+        >
+          <span className={`absolute left-1/2 -translate-x-1/2 w-2.5 h-2.5 rounded-full bg-white shadow-sm transition-all duration-200 ${p.on_team ? 'top-[3px]' : 'bottom-[3px]'}`} />
+        </button>
+      ) : (
+        <span className="w-[14px] h-8 shrink-0 opacity-20 rounded-full bg-surface-2 border border-border" />
+      )}
+
       {/* Sprite + status stacked */}
       <div className="flex flex-col items-center gap-1.5 shrink-0 w-16">
         {spriteUrl ? (
@@ -732,7 +801,7 @@ function PokemonRow({ pokemon: p, runId }: { pokemon: CapturedPokemon; runId: nu
       </div>
 
       <div className="flex flex-col items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-auto">
-        <button onClick={() => { setEditName(p.pokemon_name); setEditNickname(p.nickname ?? ''); setIsEditing(true) }} className="text-xs text-muted hover:text-text transition-colors" title="Edit">✏</button>
+        <button onClick={() => { setEditName(p.pokemon_name); setEditNickname(p.nickname ?? ''); setEditTwitchUsername(p.twitch_username ?? ''); setIsEditing(true) }} className="text-xs text-muted hover:text-text transition-colors" title="Edit">✏</button>
 
         {p.status === 'alive' && (
           <button onClick={() => update({ status: 'fainted' })} className="text-muted hover:text-fainted transition-colors" title="Mark fainted"><SkullIcon className="w-3 h-3" /></button>
@@ -751,6 +820,192 @@ function PokemonRow({ pokemon: p, runId }: { pokemon: CapturedPokemon; runId: nu
         )}
       </div>
     </div>
+  )
+}
+
+// --- Roll Modal ---
+
+function RollModal({ runId, pokemonList, onClose }: { runId: number; pokemonList: CapturedPokemon[]; onClose: () => void }) {
+  const queryClient = useQueryClient()
+  const [step, setStep] = useState<1 | 2>(1)
+  const [count, setCount] = useState(3)
+  const [includeTeam, setIncludeTeam] = useState(false)
+  const [rolled, setRolled] = useState<CapturedPokemon[]>([])
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+
+  const currentTeam = pokemonList.filter((p) => p.on_team && p.status === 'alive')
+
+  const [rollError, setRollError] = useState<string | null>(null)
+  const [confirmError, setConfirmError] = useState<string | null>(null)
+
+  const friendlyRollError = (msg: string): string => {
+    if (msg.includes('No eligible Pokémon')) return includeTeam
+      ? 'No Pokémon are available to roll — you need at least one alive Pokémon.'
+      : 'All alive Pokémon are already on the team. Try enabling "Include current team in the roll pool".'
+    if (msg.includes('count must be at least')) return 'Pick at least 1 Pokémon to roll.'
+    if (msg.includes('Failed to fetch') || msg.includes('NetworkError')) return 'Could not reach the server. Is the backend running?'
+    return msg
+  }
+
+  const { mutate: roll, isPending: rolling } = useMutation({
+    mutationFn: () => api.pokemon.roll(runId, count, includeTeam),
+    onSuccess: (data) => {
+      setRollError(null)
+      setRolled(data)
+      setSelected(new Set(currentTeam.map((p) => p.id)))
+      setStep(2)
+    },
+    onError: (err: Error) => setRollError(friendlyRollError(err.message)),
+  })
+
+  const { mutate: confirm, isPending: confirming } = useMutation({
+    mutationFn: () => api.pokemon.confirmTeam(runId, Array.from(selected)),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pokemon', runId] })
+      onClose()
+    },
+    onError: (err: Error) => setConfirmError(err.message),
+  })
+
+  const toggleSelect = (id: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        if (next.size >= 6) return prev
+        next.add(id)
+      }
+      return next
+    })
+  }
+
+  const currentTeamIds = new Set(currentTeam.map((p) => p.id))
+  const extraRolled = rolled.filter((p) => !currentTeamIds.has(p.id))
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onMouseDown={onClose}>
+      <div className="bg-surface border border-border rounded-xl w-full max-w-md p-6 flex flex-col gap-5 shadow-2xl" onMouseDown={(e) => e.stopPropagation()}>
+        {step === 1 ? (
+          <>
+            <h2 className="text-sm font-semibold text-text">Roll Team</h2>
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-muted">How many Pokémon to roll?</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={6}
+                  value={count}
+                  onChange={(e) => setCount(Math.max(1, Math.min(6, Number(e.target.value))))}
+                  className="bg-surface-2 border border-border rounded-lg px-3 py-2 text-sm text-text focus:outline-none focus:border-accent w-24"
+                />
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={includeTeam}
+                  onChange={(e) => setIncludeTeam(e.target.checked)}
+                  className="accent-accent"
+                />
+                <span className="text-sm text-text">Include current team in the roll pool</span>
+              </label>
+            </div>
+            {rollError && (
+              <p className="text-xs text-fainted bg-fainted/10 border border-fainted/30 rounded-lg px-3 py-2">{rollError}</p>
+            )}
+            <div className="flex justify-end gap-2 pt-1">
+              <button onClick={onClose} className="text-xs text-muted hover:text-text transition-colors px-3 py-1.5">Cancel</button>
+              <button
+                onClick={() => roll()}
+                disabled={rolling}
+                className="text-xs font-semibold px-4 py-1.5 rounded-lg bg-accent text-white hover:bg-accent-hover transition-colors disabled:opacity-50"
+              >
+                {rolling ? 'Rolling…' : 'Roll!'}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div>
+              <h2 className="text-sm font-semibold text-text">Choose Your Team</h2>
+              <p className="text-xs text-muted mt-0.5">{selected.size}/6 selected — non-selected Pokémon will gain +1 impatience</p>
+            </div>
+            <div className="flex flex-col gap-3 max-h-80 overflow-y-auto pr-1">
+              {currentTeam.length > 0 && (
+                <>
+                  <p className="text-xs text-muted uppercase tracking-wider">Current Team</p>
+                  {currentTeam.map((p) => (
+                    <RollPokemonRow
+                      key={p.id}
+                      pokemon={p}
+                      checked={selected.has(p.id)}
+                      onToggle={() => toggleSelect(p.id)}
+                      disabled={!selected.has(p.id) && selected.size >= 6}
+                    />
+                  ))}
+                </>
+              )}
+              {extraRolled.length > 0 && (
+                <>
+                  <p className="text-xs text-muted uppercase tracking-wider mt-1">From Roll</p>
+                  {extraRolled.map((p) => (
+                    <RollPokemonRow
+                      key={p.id}
+                      pokemon={p}
+                      checked={selected.has(p.id)}
+                      onToggle={() => toggleSelect(p.id)}
+                      disabled={!selected.has(p.id) && selected.size >= 6}
+                    />
+                  ))}
+                </>
+              )}
+              {currentTeam.length === 0 && extraRolled.length === 0 && (
+                <p className="text-xs text-muted italic">No Pokémon available.</p>
+              )}
+            </div>
+            {confirmError && (
+              <p className="text-xs text-fainted bg-fainted/10 border border-fainted/30 rounded-lg px-3 py-2">{confirmError}</p>
+            )}
+            <div className="flex justify-between items-center pt-1">
+              <button onClick={() => { setStep(1); setConfirmError(null) }} className="text-xs text-muted hover:text-text transition-colors">← Back</button>
+              <div className="flex gap-2">
+                <button onClick={onClose} className="text-xs text-muted hover:text-text transition-colors px-3 py-1.5">Cancel</button>
+                <button
+                  onClick={() => { setConfirmError(null); confirm() }}
+                  disabled={confirming || selected.size === 0}
+                  className="text-xs font-semibold px-4 py-1.5 rounded-lg bg-accent text-white hover:bg-accent-hover transition-colors disabled:opacity-50"
+                >
+                  {confirming ? 'Confirming…' : 'Confirm Team'}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function RollPokemonRow({ pokemon: p, checked, onToggle, disabled }: {
+  pokemon: CapturedPokemon
+  checked: boolean
+  onToggle: () => void
+  disabled: boolean
+}) {
+  const spriteUrl = getPokemonSpriteUrl(p.pokemon_name)
+  return (
+    <label className={`flex items-center gap-3 border rounded-lg px-3 py-2 cursor-pointer transition-colors select-none ${checked ? 'bg-accent/10 border-accent' : 'bg-surface-2 border-border'} ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:border-muted'}`}>
+      <input type="checkbox" checked={checked} onChange={onToggle} disabled={disabled} className="accent-accent shrink-0" />
+      {spriteUrl && (
+        <img src={spriteUrl} alt={p.pokemon_name} className="w-8 h-8 object-contain shrink-0" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
+      )}
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-text">{p.pokemon_name}</p>
+        {p.nickname && <p className="text-xs text-muted">"{p.nickname}"</p>}
+      </div>
+      <span className="text-xs text-muted tabular-nums shrink-0">⚡{p.impatience}</span>
+    </label>
   )
 }
 

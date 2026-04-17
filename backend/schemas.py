@@ -75,6 +75,7 @@ class PokemonUpdate(BaseModel):
     twitch_username: str | None = None
     status: PokemonStatus | None = None
     impatience: int | None = None
+    on_team: bool | None = None
 
 
 class PokemonOut(BaseModel):
@@ -86,6 +87,7 @@ class PokemonOut(BaseModel):
     twitch_username: str | None
     status: PokemonStatus
     impatience: int
+    on_team: bool
     created_at: datetime
     zone: ZoneOut
 
@@ -152,6 +154,28 @@ class QueuedNicknameOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class TwitchRewardsOut(BaseModel):
+    nickname_reward_id: str | None
+    nickname_reward_cost: int
+    impatience_reward_id: str | None
+    impatience_reward_cost: int
+    impatience_points_normal: int
+    impatience_points_vip: int
+    impatience_points_sub: int
+    impatience_priority: str
+
+    model_config = {"from_attributes": True}
+
+
+class TwitchRewardsUpdate(BaseModel):
+    nickname_reward_cost: int | None = None
+    impatience_reward_cost: int | None = None
+    impatience_points_normal: int | None = None
+    impatience_points_vip: int | None = None
+    impatience_points_sub: int | None = None
+    impatience_priority: str | None = None
+
+
 class TwitchConfigOut(BaseModel):
     channel_name: str
     streamer_display_name: str | None
@@ -168,3 +192,40 @@ class TwitchConfigOut(BaseModel):
             has_streamer_token=bool(obj.streamer_access_token),
             has_bot_token=bool(obj.bot_access_token),
         )
+
+
+# --- Level Caps ---
+
+class LevelCapOut(BaseModel):
+    id: int
+    game_id: int
+    sort_order: int
+    milestone: str
+    level: int
+
+    model_config = {"from_attributes": True}
+
+
+class RunLevelCapOut(BaseModel):
+    id: int
+    run_id: int
+    sort_order: int
+    milestone: str
+    level: int
+    is_cleared: bool
+
+    model_config = {"from_attributes": True}
+
+
+class RunLevelCapCreate(BaseModel):
+    run_id: int
+    milestone: str
+    level: int
+    sort_order: int | None = None
+
+
+class RunLevelCapUpdate(BaseModel):
+    milestone: str | None = None
+    level: int | None = None
+    is_cleared: bool | None = None
+    sort_order: int | None = None

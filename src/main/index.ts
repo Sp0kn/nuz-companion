@@ -88,6 +88,15 @@ function registerIpcHandlers(): void {
     copyFileSync(filePaths[0], getDbPath())
     return { success: true }
   })
+
+  ipcMain.handle('dialog:pick-folder', async () => {
+    const { filePaths, canceled } = await dialog.showOpenDialog({
+      title: 'Select Image Output Folder',
+      properties: ['openDirectory', 'createDirectory'],
+    })
+    if (canceled || filePaths.length === 0) return null
+    return filePaths[0]
+  })
 }
 
 app.whenReady().then(() => {

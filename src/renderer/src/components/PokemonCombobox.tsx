@@ -15,10 +15,13 @@ export default function PokemonCombobox({ value, onChange, placeholder, classNam
   const [highlighted, setHighlighted] = useState(0)
   const containerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  // Only open the dropdown after the user has actually typed — not on autoFocus or pre-filled values
+  const userTypedRef = useRef(false)
 
   const suggestions = filterPokemon(value)
 
   useEffect(() => {
+    if (!userTypedRef.current) return
     setHighlighted(0)
     setOpen(suggestions.length > 0)
   }, [value])
@@ -36,6 +39,7 @@ export default function PokemonCombobox({ value, onChange, placeholder, classNam
   const select = (name: string) => {
     onChange(name)
     setOpen(false)
+    userTypedRef.current = false
     inputRef.current?.focus()
   }
 
@@ -70,9 +74,9 @@ export default function PokemonCombobox({ value, onChange, placeholder, classNam
         ref={inputRef}
         type="text"
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => { userTypedRef.current = true; onChange(e.target.value) }}
         onKeyDown={handleKeyDown}
-        onFocus={() => { if (suggestions.length > 0) setOpen(true) }}
+        onFocus={() => { if (userTypedRef.current && suggestions.length > 0) setOpen(true) }}
         placeholder={placeholder}
         autoFocus={autoFocus}
         className={className}

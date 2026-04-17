@@ -78,6 +78,7 @@ class Pokemon(Base):
     twitch_username: Mapped[str | None] = mapped_column(String, nullable=True)
     status: Mapped[str] = mapped_column(String, default=PokemonStatus.alive, nullable=False)
     impatience: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    on_team: Mapped[bool] = mapped_column(Integer, default=0, nullable=False)  # stored as 0/1 in SQLite
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc)
     )
@@ -128,6 +129,19 @@ class TwitchConfig(Base):
     streamer_refresh_token: Mapped[str | None] = mapped_column(String, nullable=True)
     streamer_user_id: Mapped[str | None] = mapped_column(String, nullable=True)
     streamer_display_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Currently selected run (set by frontend, used for auto-queuing)
+    current_run_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("runs.id"), nullable=True)
+    # Channel reward IDs (set after creating them on Twitch)
+    nickname_reward_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    nickname_reward_cost: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
+    impatience_reward_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    impatience_reward_cost: Mapped[int] = mapped_column(Integer, default=500, nullable=False)
+    # Impatience points per viewer tier
+    impatience_points_normal: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    impatience_points_vip: Mapped[int] = mapped_column(Integer, default=2, nullable=False)
+    impatience_points_sub: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    # Comma-separated priority order, e.g. "sub,vip,normal"
+    impatience_priority: Mapped[str] = mapped_column(String, default="sub,vip,normal", nullable=False)
 
 
 class QueuedNickname(Base):
@@ -148,3 +162,31 @@ class QueuedNickname(Base):
     run: Mapped["Run"] = relationship(back_populates="nickname_queue")
     redemption_type: Mapped["RedemptionType"] = relationship(back_populates="queued_nicknames")
     assigned_to: Mapped["Pokemon | None"] = relationship()
+
+
+class LevelCap(Base):
+    __tablename__ = "level_caps"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id"), nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    milestone: Mapped[str] = mapped_column(String, nullable=False)
+    level: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class RunLevelCap(Base):
+    __tablename__ = "run_level_caps"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("runs.id"), nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    milestone: Mapped[str] = mapped_column(String, nullable=False)
+    level: Mapped[int] = mapped_column(Integer, nullable=False)
+    is_cleared: Mapped[bool] = mapped_column(Integer, default=0, nullable=False)
+
+
+class AppSettings(Base):
+    __tablename__ = "app_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True, default=1)
+    image_output_path: Mapped[str | None] = mapped_column(String, nullable=True)

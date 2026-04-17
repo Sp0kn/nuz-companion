@@ -210,6 +210,154 @@ GAMES: list[dict] = [
 ]
 
 # ---------------------------------------------------------------------------
+# Level cap data (hardcore Nuzlocke caps, per game slug)
+# ---------------------------------------------------------------------------
+
+_KANTO_RBY = [
+    ("Gym 1", 14), ("Gym 2", 21), ("Gym 3", 24), ("Gym 4", 29),
+    ("Gym 5", 43), ("Gym 6", 43), ("Gym 7", 47), ("Gym 8", 50),
+    ("Elite Four 1", 56), ("Elite Four 2", 58), ("Elite Four 3", 60), ("Elite Four 4", 62),
+    ("Champion", 65),
+]
+_KANTO_YELLOW = [
+    ("Gym 1", 12), ("Gym 2", 21), ("Gym 3", 28), ("Gym 4", 32),
+    ("Gym 5", 50), ("Gym 6", 50), ("Gym 7", 54), ("Gym 8", 55),
+    ("Elite Four 1", 56), ("Elite Four 2", 58), ("Elite Four 3", 60), ("Elite Four 4", 62),
+    ("Champion", 65),
+]
+_KANTO_FRLG = [
+    ("Gym 1", 14), ("Gym 2", 21), ("Gym 3", 24), ("Gym 4", 29),
+    ("Gym 5", 43), ("Gym 6", 43), ("Gym 7", 47), ("Gym 8", 50),
+    ("Elite Four 1", 54), ("Elite Four 2", 56), ("Elite Four 3", 58), ("Elite Four 4", 60),
+    ("Champion", 63),
+]
+_JOHTO_GSC = [
+    ("Gym 1", 9), ("Gym 2", 16), ("Gym 3", 20), ("Gym 4", 25),
+    ("Gym 5", 30), ("Gym 6", 35), ("Gym 7", 31), ("Gym 8", 40),
+    ("Elite Four 1", 42), ("Elite Four 2", 44), ("Elite Four 3", 46), ("Elite Four 4", 47),
+    ("Champion", 50),
+    ("Kanto Gym 1", 44), ("Kanto Gym 2", 47), ("Kanto Gym 3", 45), ("Kanto Gym 4", 46),
+    ("Kanto Gym 5", 39), ("Kanto Gym 6", 48), ("Kanto Gym 7", 50), ("Kanto Gym 8", 58),
+    ("Red", 81),
+]
+_JOHTO_HGSS = [
+    ("Gym 1", 13), ("Gym 2", 17), ("Gym 3", 19), ("Gym 4", 25),
+    ("Gym 5", 31), ("Gym 6", 35), ("Gym 7", 34), ("Gym 8", 41),
+    ("Elite Four 1", 42), ("Elite Four 2", 44), ("Elite Four 3", 46), ("Elite Four 4", 47),
+    ("Champion", 50),
+    ("Kanto Gym 1", 54), ("Kanto Gym 2", 54), ("Kanto Gym 3", 53), ("Kanto Gym 4", 56),
+    ("Kanto Gym 5", 50), ("Kanto Gym 6", 55), ("Kanto Gym 7", 59), ("Kanto Gym 8", 60),
+    ("Red", 88),
+]
+_HOENN_RS = [
+    ("Gym 1", 15), ("Gym 2", 18), ("Gym 3", 23), ("Gym 4", 28),
+    ("Gym 5", 31), ("Gym 6", 33), ("Gym 7", 42), ("Gym 8", 43),
+    ("Elite Four 1", 49), ("Elite Four 2", 51), ("Elite Four 3", 53), ("Elite Four 4", 55),
+    ("Champion", 58),
+]
+_HOENN_EMERALD = [
+    ("Gym 1", 15), ("Gym 2", 19), ("Gym 3", 24), ("Gym 4", 29),
+    ("Gym 5", 31), ("Gym 6", 33), ("Gym 7", 42), ("Gym 8", 46),
+    ("Elite Four 1", 49), ("Elite Four 2", 51), ("Elite Four 3", 53), ("Elite Four 4", 55),
+    ("Champion", 58),
+    ("Steven (Rematch)", 78),
+]
+_HOENN_ORAS = [
+    ("Gym 1", 14), ("Gym 2", 16), ("Gym 3", 21), ("Gym 4", 28),
+    ("Gym 5", 30), ("Gym 6", 35), ("Gym 7", 45), ("Gym 8", 46),
+    ("Elite Four 1", 52), ("Elite Four 2", 53), ("Elite Four 3", 54), ("Elite Four 4", 55),
+    ("Champion", 59),
+    ("E4 Rematch 1", 72), ("E4 Rematch 2", 73), ("E4 Rematch 3", 74), ("E4 Rematch 4", 75),
+    ("Champion Rematch", 79),
+]
+_SINNOH_DP = [
+    ("Gym 1", 14), ("Gym 2", 22), ("Gym 3", 30), ("Gym 4", 30),
+    ("Gym 5", 36), ("Gym 6", 39), ("Gym 7", 42), ("Gym 8", 49),
+    ("Elite Four 1", 57), ("Elite Four 2", 59), ("Elite Four 3", 61), ("Elite Four 4", 63),
+    ("Champion", 66),
+]
+_SINNOH_PLATINUM = [
+    ("Gym 1", 14), ("Gym 2", 22), ("Gym 3", 26), ("Gym 4", 32),
+    ("Gym 5", 37), ("Gym 6", 41), ("Gym 7", 44), ("Gym 8", 50),
+    ("Elite Four 1", 53), ("Elite Four 2", 55), ("Elite Four 3", 57), ("Elite Four 4", 59),
+    ("Champion", 62),
+]
+_UNOVA_BW = [
+    ("Gym 1", 14), ("Gym 2", 20), ("Gym 3", 23), ("Gym 4", 27),
+    ("Gym 5", 31), ("Gym 6", 35), ("Gym 7", 39), ("Gym 8", 43),
+    ("Elite Four 1", 50), ("Elite Four 2", 50), ("Elite Four 3", 50), ("Elite Four 4", 50),
+    ("N", 52), ("Ghetsis", 54),
+    ("E4 Rematch 1", 73), ("E4 Rematch 2", 73), ("E4 Rematch 3", 73), ("E4 Rematch 4", 73),
+    ("Champion (Alder)", 77),
+]
+_UNOVA_B2W2 = [
+    ("Gym 1", 13), ("Gym 2", 18), ("Gym 3", 24), ("Gym 4", 30),
+    ("Gym 5", 33), ("Gym 6", 39), ("Gym 7", 48), ("Gym 8", 51),
+    ("Elite Four 1", 58), ("Elite Four 2", 58), ("Elite Four 3", 58), ("Elite Four 4", 58),
+    ("Champion", 59),
+    ("E4 Rematch 1", 74), ("E4 Rematch 2", 74), ("E4 Rematch 3", 74), ("E4 Rematch 4", 74),
+    ("Champion Rematch", 78),
+]
+_KALOS_XY = [
+    ("Gym 1", 12), ("Gym 2", 25), ("Gym 3", 32), ("Gym 4", 34),
+    ("Gym 5", 37), ("Gym 6", 42), ("Gym 7", 48), ("Gym 8", 59),
+    ("Elite Four 1", 65), ("Elite Four 2", 65), ("Elite Four 3", 65), ("Elite Four 4", 65),
+    ("Champion", 68),
+    ("E4 Rematch 1", 74), ("E4 Rematch 2", 74), ("E4 Rematch 3", 74), ("E4 Rematch 4", 74),
+    ("Champion Rematch", 78),
+]
+_ALOLA_SM = [
+    ("Trial 1", 12), ("Grand Trial 1", 15),
+    ("Trial 2", 20), ("Trial 3", 22), ("Trial 4", 24),
+    ("Grand Trial 2", 27),
+    ("Trial 5", 29), ("Trial 6", 33),
+    ("Grand Trial 3", 39),
+    ("Trial 7", 45),
+    ("Grand Trial 4", 48),
+    ("Elite Four 1", 55), ("Elite Four 2", 55), ("Elite Four 3", 55), ("Elite Four 4", 55),
+    ("Champion", 58),
+]
+_ALOLA_USUM = [
+    ("Trial 1", 10), ("Trial 2", 12),
+    ("Grand Trial 1", 16),
+    ("Trial 3", 20), ("Trial 4", 22), ("Trial 5", 24),
+    ("Grand Trial 2", 28),
+    ("Trial 6", 33), ("Trial 7", 35),
+    ("Grand Trial 3", 44),
+    ("Trial 8", 49),
+    ("Grand Trial 4", 54),
+    ("Mina", 55),
+    ("Ultra Necrozma", 60),
+    ("Elite Four 1", 57), ("Elite Four 2", 57), ("Elite Four 3", 57), ("Elite Four 4", 57),
+    ("Champion", 60),
+]
+_GALAR = [
+    ("Gym 1", 20), ("Gym 2", 24), ("Gym 3", 27), ("Gym 4", 36),
+    ("Gym 5", 38), ("Gym 6", 42), ("Gym 7", 46), ("Gym 8", 48),
+    ("Rival Battle 1", 49), ("Rival Battle 2", 49),
+    ("Rival Battle 3", 53), ("Rival Battle 4", 53),
+    ("Rival Battle 5", 54), ("Rival Battle 6", 55),
+    ("Champion (Leon)", 65),
+]
+
+LEVEL_CAPS: dict[str, list[tuple[str, int]]] = {
+    "red": _KANTO_RBY, "blue": _KANTO_RBY, "yellow": _KANTO_YELLOW,
+    "gold": _JOHTO_GSC, "silver": _JOHTO_GSC, "crystal": _JOHTO_GSC,
+    "ruby": _HOENN_RS, "sapphire": _HOENN_RS, "emerald": _HOENN_EMERALD,
+    "firered": _KANTO_FRLG, "leafgreen": _KANTO_FRLG,
+    "diamond": _SINNOH_DP, "pearl": _SINNOH_DP, "platinum": _SINNOH_PLATINUM,
+    "heartgold": _JOHTO_HGSS, "soulsilver": _JOHTO_HGSS,
+    "black": _UNOVA_BW, "white": _UNOVA_BW,
+    "black2": _UNOVA_B2W2, "white2": _UNOVA_B2W2,
+    "x": _KALOS_XY, "y": _KALOS_XY,
+    "omegaruby": _HOENN_ORAS, "alphasapphire": _HOENN_ORAS,
+    "sun": _ALOLA_SM, "moon": _ALOLA_SM,
+    "ultrasun": _ALOLA_USUM, "ultramoon": _ALOLA_USUM,
+    "sword": _GALAR, "shield": _GALAR,
+    "brilliantdiamond": _SINNOH_DP, "shiningpearl": _SINNOH_DP,
+}
+
+# ---------------------------------------------------------------------------
 # Seeding
 # ---------------------------------------------------------------------------
 
@@ -240,6 +388,21 @@ def seed() -> None:
                 db.add(PokemonSpecies(id=dex_number, name=name))
             db.commit()
             print(f"[seed] Inserted {len(names)} Pokémon species.")
+
+        from models import LevelCap
+        if db.query(LevelCap).count() == 0:
+            games = db.query(Game).all()
+            game_by_slug = {g.slug: g for g in games}
+            total = 0
+            for slug, caps in LEVEL_CAPS.items():
+                game = game_by_slug.get(slug)
+                if not game:
+                    continue
+                for i, (milestone, level) in enumerate(caps):
+                    db.add(LevelCap(game_id=game.id, sort_order=i, milestone=milestone, level=level))
+                    total += 1
+            db.commit()
+            print(f"[seed] Inserted {total} level cap entries.")
     finally:
         db.close()
 

@@ -1,11 +1,13 @@
 import asyncio
 import json
 import logging
+from datetime import datetime, timezone
 from typing import Set
 
 import httpx
 import websockets
 from fastapi import WebSocket
+from sqlalchemy import or_, func
 
 import config
 
@@ -59,9 +61,40 @@ class TwitchService:
         self._on_bot_token_refreshed = None
         self._on_streamer_token_refreshed = None
 
+        # DB session factory (injected at startup for auto-handling events)
+        self._db_session_factory = None
+
+        # Reward config
+        self._nickname_reward_id: str | None = None
+        self._impatience_reward_id: str | None = None
+        self._impatience_points_normal: int = 1
+        self._impatience_points_vip: int = 2
+        self._impatience_points_sub: int = 3
+        self._impatience_priority: list[str] = ["sub", "vip", "normal"]
+
+        # Currently selected run (updated by frontend)
+        self._current_run_id: int | None = None
+
     # -------------------------------------------------------------------------
     # Public API
     # -------------------------------------------------------------------------
+
+    def set_db_session_factory(self, factory):
+        self._db_session_factory = factory
+
+    def set_current_run(self, run_id: int | None):
+        self._current_run_id = run_id
+
+    def update_reward_config(self, config_obj):
+        """Sync reward settings from a TwitchConfig ORM object."""
+        self._nickname_reward_id = getattr(config_obj, "nickname_reward_id", None)
+        self._impatience_reward_id = getattr(config_obj, "impatience_reward_id", None)
+        self._impatience_points_normal = getattr(config_obj, "impatience_points_normal", 1)
+        self._impatience_points_vip = getattr(config_obj, "impatience_points_vip", 2)
+        self._impatience_points_sub = getattr(config_obj, "impatience_points_sub", 3)
+        priority_str = getattr(config_obj, "impatience_priority", "sub,vip,normal") or "sub,vip,normal"
+        self._impatience_priority = [s.strip() for s in priority_str.split(",")]
+        self._current_run_id = getattr(config_obj, "current_run_id", None)
 
     async def init_bot_token(self, stored_token: str | None, on_refreshed=None):
         """Called on startup — refresh bot token to ensure it's valid."""
@@ -81,6 +114,7 @@ class TwitchService:
         if on_streamer_refreshed:
             self._on_streamer_token_refreshed = on_streamer_refreshed
 
+        self.update_reward_config(config_obj)
         self._cancel_tasks()
 
         if self._bot_access_token and self._channel:
@@ -222,29 +256,45 @@ class TwitchService:
     # -------------------------------------------------------------------------
 
     async def _subscribe_eventsub(self, session_id: str) -> bool:
+        headers = {
+            "Authorization": f"Bearer {self._streamer_access_token}",
+            "Client-Id": config.TWITCH_CLIENT_ID,
+            "Content-Type": "application/json",
+        }
+        subscriptions = [
+            {
+                "type": "channel.channel_points_custom_reward_redemption.add",
+                "version": "1",
+                "condition": {"broadcaster_user_id": self._streamer_user_id},
+            },
+            {
+                "type": "channel.subscribe",
+                "version": "1",
+                "condition": {"broadcaster_user_id": self._streamer_user_id},
+            },
+            {
+                "type": "channel.subscription.gift",
+                "version": "1",
+                "condition": {"broadcaster_user_id": self._streamer_user_id},
+            },
+        ]
         try:
             async with httpx.AsyncClient() as client:
-                resp = await client.post(
-                    "https://api.twitch.tv/helix/eventsub/subscriptions",
-                    headers={
-                        "Authorization": f"Bearer {self._streamer_access_token}",
-                        "Client-Id": config.TWITCH_CLIENT_ID,
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "type": "channel.channel_points_custom_reward_redemption.add",
-                        "version": "1",
-                        "condition": {"broadcaster_user_id": self._streamer_user_id},
-                        "transport": {"method": "websocket", "session_id": session_id},
-                    },
-                )
-                if resp.status_code == 401:
-                    await self._refresh_streamer_token()
-                    return False
-                return resp.status_code == 202
+                for sub in subscriptions:
+                    resp = await client.post(
+                        "https://api.twitch.tv/helix/eventsub/subscriptions",
+                        headers=headers,
+                        json={**sub, "transport": {"method": "websocket", "session_id": session_id}},
+                    )
+                    if resp.status_code == 401:
+                        await self._refresh_streamer_token()
+                        return False
+                    if resp.status_code not in (202, 409):  # 409 = already subscribed
+                        logger.warning(f"EventSub subscription warning ({sub['type']}): {resp.text}")
         except Exception as e:
             logger.error(f"EventSub subscribe error: {e}")
             return False
+        return True
 
     async def _run_eventsub(self):
         while True:
@@ -279,15 +329,225 @@ class TwitchService:
             return
         event_type = msg["metadata"].get("subscription_type")
         payload = msg.get("payload", {}).get("event", {})
+
         if event_type == "channel.channel_points_custom_reward_redemption.add":
+            reward_id = payload.get("reward", {}).get("id", "")
             await self.broadcast({
                 "type": "redemption",
+                "reward_id": reward_id,
                 "reward_title": payload.get("reward", {}).get("title", ""),
                 "user": payload.get("user_login", ""),
                 "display_name": payload.get("user_name", ""),
                 "user_input": payload.get("user_input", ""),
                 "redeemed_at": payload.get("redeemed_at", ""),
             })
+            if reward_id == self._nickname_reward_id:
+                await self._handle_nickname_redemption(payload)
+            elif reward_id == self._impatience_reward_id:
+                await self._handle_impatience_redemption(payload)
+
+        elif event_type == "channel.subscribe":
+            await self._handle_sub(payload)
+
+        elif event_type == "channel.subscription.gift":
+            await self._handle_gift_sub(payload)
+
+    # -------------------------------------------------------------------------
+    # Auto-handlers
+    # -------------------------------------------------------------------------
+
+    async def _handle_nickname_redemption(self, payload: dict):
+        if not self._db_session_factory or not self._current_run_id:
+            return
+        username = payload.get("user_login", "")
+        display_name = payload.get("user_name", username)
+        redeemed_at_str = payload.get("redeemed_at")
+        try:
+            redeemed_at = datetime.fromisoformat(redeemed_at_str.replace("Z", "+00:00")) if redeemed_at_str else datetime.now(timezone.utc)
+        except Exception:
+            redeemed_at = datetime.now(timezone.utc)
+        try:
+            from models import RedemptionType, QueuedNickname
+            with self._db_session_factory() as db:
+                rt = db.query(RedemptionType).filter(
+                    RedemptionType.run_id == self._current_run_id,
+                    RedemptionType.name == "Reward",
+                ).first()
+                if not rt:
+                    logger.warning(f"'Channel Reward' redemption type not found for run {self._current_run_id}")
+                    return
+                db.add(QueuedNickname(
+                    run_id=self._current_run_id,
+                    redemption_type_id=rt.id,
+                    nickname=display_name,
+                    redeemed_by=username,
+                    redeemed_at=redeemed_at,
+                ))
+                db.commit()
+                logger.info(f"Auto-queued nickname '{display_name}' for run {self._current_run_id}")
+        except Exception as e:
+            logger.error(f"Nickname redemption error: {e}")
+
+    async def _handle_impatience_redemption(self, payload: dict):
+        if not self._db_session_factory or not self._current_run_id:
+            return
+        user_id = payload.get("user_id", "")
+        pokemon_search = payload.get("user_input", "").strip()
+        if not pokemon_search:
+            return
+        try:
+            viewer_status = await self._get_viewer_status(user_id)
+            points = self._get_impatience_points(viewer_status)
+
+            from models import Pokemon
+            with self._db_session_factory() as db:
+                search_lower = pokemon_search.lower()
+                mon = db.query(Pokemon).filter(
+                    Pokemon.run_id == self._current_run_id,
+                    or_(
+                        func.lower(Pokemon.pokemon_name) == search_lower,
+                        func.lower(Pokemon.nickname) == search_lower,
+                    ),
+                ).first()
+                if not mon:
+                    logger.warning(f"Pokemon '{pokemon_search}' not found in run {self._current_run_id}")
+                    display_name = payload.get("user_name", payload.get("user_login", ""))
+                    await self.send_chat(
+                        f"@{display_name} — no Pokémon named \"{pokemon_search}\" found in the current run. "
+                        f"Check the species name or nickname and try again!"
+                    )
+                    return
+                mon.impatience = max(0, mon.impatience + points)
+                db.commit()
+                logger.info(f"Added {points} impatience to {mon.pokemon_name} ({viewer_status})")
+        except Exception as e:
+            logger.error(f"Impatience redemption error: {e}")
+
+    async def _handle_sub(self, payload: dict):
+        if not self._db_session_factory or not self._current_run_id:
+            return
+        username = payload.get("user_login", "")
+        try:
+            from models import RedemptionType, QueuedNickname
+            with self._db_session_factory() as db:
+                rt = db.query(RedemptionType).filter(
+                    RedemptionType.run_id == self._current_run_id,
+                    RedemptionType.name == "Twitch Sub",
+                ).first()
+                if not rt:
+                    logger.warning(f"'Twitch Sub' redemption type not found for run {self._current_run_id}")
+                    return
+                db.add(QueuedNickname(
+                    run_id=self._current_run_id,
+                    redemption_type_id=rt.id,
+                    nickname="",
+                    redeemed_by=username,
+                    redeemed_at=datetime.now(timezone.utc),
+                ))
+                db.commit()
+                logger.info(f"Sub nickname slot queued for {username}")
+        except Exception as e:
+            logger.error(f"Sub handler error: {e}")
+
+    async def _handle_gift_sub(self, payload: dict):
+        if not self._db_session_factory or not self._current_run_id:
+            return
+        gifter = payload.get("user_login", "")
+        total = int(payload.get("total", 1))
+        try:
+            from models import RedemptionType, QueuedNickname
+            with self._db_session_factory() as db:
+                rt = db.query(RedemptionType).filter(
+                    RedemptionType.run_id == self._current_run_id,
+                    RedemptionType.name == "Twitch Sub",
+                ).first()
+                if not rt:
+                    return
+                for _ in range(total):
+                    db.add(QueuedNickname(
+                        run_id=self._current_run_id,
+                        redemption_type_id=rt.id,
+                        nickname="",
+                        redeemed_by=gifter,
+                        redeemed_at=datetime.now(timezone.utc),
+                    ))
+                db.commit()
+                logger.info(f"Gift sub: {total} nickname slot(s) queued for gifter {gifter}")
+        except Exception as e:
+            logger.error(f"Gift sub handler error: {e}")
+
+    # -------------------------------------------------------------------------
+    # Viewer status helpers
+    # -------------------------------------------------------------------------
+
+    def _get_impatience_points(self, viewer_status: str) -> int:
+        return {
+            "sub": self._impatience_points_sub,
+            "vip": self._impatience_points_vip,
+            "normal": self._impatience_points_normal,
+        }.get(viewer_status, self._impatience_points_normal)
+
+    async def _get_viewer_status(self, user_id: str) -> str:
+        """Returns the highest-priority status for the viewer based on configured priority."""
+        if not self._streamer_access_token or not self._streamer_user_id or not user_id:
+            return "normal"
+        # The Twitch API never returns the broadcaster as a subscriber of their own channel.
+        # Treat the broadcaster as a sub so they always get the correct tier.
+        if user_id == self._streamer_user_id:
+            return "sub"
+        is_sub = await self._check_is_sub(user_id)
+        is_vip = await self._check_is_vip(user_id)
+        for status in self._impatience_priority:
+            if status == "sub" and is_sub:
+                return "sub"
+            if status == "vip" and is_vip:
+                return "vip"
+            if status == "normal":
+                return "normal"
+        return "normal"
+
+    async def _check_is_sub(self, user_id: str) -> bool:
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(
+                    "https://api.twitch.tv/helix/subscriptions/user",
+                    params={"broadcaster_id": self._streamer_user_id, "user_id": user_id},
+                    headers={
+                        "Authorization": f"Bearer {self._streamer_access_token}",
+                        "Client-Id": config.TWITCH_CLIENT_ID,
+                    },
+                )
+                if resp.status_code == 401:
+                    logger.warning("Sub check failed: streamer token unauthorised — is channel:read:subscriptions scope granted?")
+                    return False
+                if resp.status_code == 403:
+                    logger.warning("Sub check failed: missing channel:read:subscriptions scope on streamer token")
+                    return False
+                return resp.status_code == 200 and bool(resp.json().get("data"))
+        except Exception as e:
+            logger.error(f"Sub check error: {e}")
+            return False
+
+    async def _check_is_vip(self, user_id: str) -> bool:
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(
+                    "https://api.twitch.tv/helix/channels/vips",
+                    params={"broadcaster_id": self._streamer_user_id, "user_id": user_id},
+                    headers={
+                        "Authorization": f"Bearer {self._streamer_access_token}",
+                        "Client-Id": config.TWITCH_CLIENT_ID,
+                    },
+                )
+                if resp.status_code == 401:
+                    logger.warning("VIP check failed: streamer token unauthorised")
+                    return False
+                if resp.status_code != 200:
+                    return False
+                return any(v.get("user_id") == user_id for v in resp.json().get("data", []))
+        except Exception as e:
+            logger.error(f"VIP check error: {e}")
+            return False
 
 
 twitch_service = TwitchService()

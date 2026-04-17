@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from database import get_db, engine
-from models import Run, Game, RunStatus
+from models import Run, Game, RunStatus, RedemptionType, TwitchConfig
 from schemas import RunCreate, RunUpdate, RunOut
 
 router = APIRouter(prefix="/runs", tags=["runs"])
@@ -15,7 +15,20 @@ def create_run(body: RunCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Game not found")
     run = Run(game_id=body.game_id, name=body.name, status=RunStatus.active)
     db.add(run)
+    db.flush()  # get run.id before commit
+
+    # Auto-create standard redemption types
+    twitch_cfg = db.query(TwitchConfig).filter(TwitchConfig.id == 1).first()
+    # "Twitch Sub" — red, priority 1 (always)
+    db.add(RedemptionType(run_id=run.id, name="Twitch Sub", priority=1, color="#ef4444"))
+    # "Channel Reward" — grey, lowest priority (only if reward is configured)
+    if twitch_cfg and twitch_cfg.nickname_reward_id:
+        db.add(RedemptionType(run_id=run.id, name="Channel Reward", priority=2, color="#8890b0"))
+
     db.commit()
+    # Auto-init level caps from game defaults
+    from routers.run_level_caps import _init_for_run
+    _init_for_run(run.id, db)
     db.refresh(run)
     return run
 
@@ -66,5 +79,6 @@ def delete_run(run_id: int):
         conn.execute(text("DELETE FROM nickname_queue WHERE run_id = :id"), {"id": run_id})
         conn.execute(text("DELETE FROM redemption_types WHERE run_id = :id"), {"id": run_id})
         conn.execute(text("DELETE FROM run_pokemon WHERE run_id = :id"), {"id": run_id})
+        conn.execute(text("DELETE FROM run_level_caps WHERE run_id = :id"), {"id": run_id})
         conn.execute(text("DELETE FROM runs WHERE id = :id"), {"id": run_id})
         conn.commit()
