@@ -36,10 +36,33 @@ export default function LogPokemonModal({ runId, gameId, initialZoneId, onClose 
         nickname: nickname.trim() || undefined,
         status,
       }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['pokemon', runId] })
-      onClose()
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: ['pokemon', runId] })
+      const previous = queryClient.getQueryData<CapturedPokemon[]>(['pokemon', runId])
+      const zone = zones.find((z) => z.id === zoneId)!
+      queryClient.setQueryData<CapturedPokemon[]>(['pokemon', runId], (old = []) => [
+        ...old,
+        {
+          id: -Date.now(),
+          run_id: runId,
+          zone_id: zoneId as number,
+          pokemon_name: pokemonName.trim(),
+          nickname: nickname.trim() || null,
+          twitch_username: null,
+          status,
+          impatience: 0,
+          on_team: false,
+          created_at: new Date().toISOString(),
+          zone,
+        },
+      ])
+      onClose() // close immediately — server syncs in background
+      return { previous }
     },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) queryClient.setQueryData(['pokemon', runId], context.previous)
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['pokemon', runId] }),
   })
 
   const canSubmit = zoneId !== '' && pokemonName.trim().length > 0

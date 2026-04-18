@@ -20,12 +20,14 @@ export default function RunDetail() {
     queryKey: ['pokemon', selectedRunId],
     queryFn: () => api.pokemon.list(selectedRunId!),
     enabled: selectedRunId !== null,
+    refetchInterval: 5000,
   })
 
   const { data: queue = [], isLoading: loadingQueue } = useQuery({
     queryKey: ['nicknameQueue', selectedRunId],
     queryFn: () => api.nicknameQueue.list(selectedRunId!),
     enabled: selectedRunId !== null,
+    refetchInterval: 5000,
   })
 
   const { data: zones = [] } = useQuery({
@@ -554,7 +556,18 @@ function ZoneCompactRow({ zone, pokemon: p, runId, onLog, onCapture }: {
   const queryClient = useQueryClient()
   const { mutate: remove } = useMutation({
     mutationFn: (id: number) => api.pokemon.delete(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['pokemon', runId] }),
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: ['pokemon', runId] })
+      const previous = queryClient.getQueryData<CapturedPokemon[]>(['pokemon', runId])
+      queryClient.setQueryData<CapturedPokemon[]>(['pokemon', runId], (old = []) =>
+        old.filter((pk) => pk.id !== id)
+      )
+      return { previous }
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) queryClient.setQueryData(['pokemon', runId], context.previous)
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['pokemon', runId] }),
   })
 
   const statusDot: Record<PokemonStatus, string> = {
@@ -676,16 +689,36 @@ function PokemonRow({ pokemon: p, runId }: { pokemon: CapturedPokemon; runId: nu
   const [editTwitchUsername, setEditTwitchUsername] = useState(p.twitch_username ?? '')
   const [confirmDelete, setConfirmDelete] = useState(false)
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['pokemon', runId] })
-
   const { mutate: update, isPending: saving } = useMutation({
     mutationFn: (body: Parameters<typeof api.pokemon.update>[1]) => api.pokemon.update(p.id, body),
-    onSuccess: invalidate,
+    onMutate: async (body) => {
+      await queryClient.cancelQueries({ queryKey: ['pokemon', runId] })
+      const previous = queryClient.getQueryData<CapturedPokemon[]>(['pokemon', runId])
+      queryClient.setQueryData<CapturedPokemon[]>(['pokemon', runId], (old = []) =>
+        old.map((pk) => (pk.id === p.id ? { ...pk, ...body } : pk))
+      )
+      return { previous }
+    },
+    onError: (_err, _body, context) => {
+      if (context?.previous) queryClient.setQueryData(['pokemon', runId], context.previous)
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['pokemon', runId] }),
   })
 
   const { mutate: remove, isPending: deleting } = useMutation({
     mutationFn: () => api.pokemon.delete(p.id),
-    onSuccess: invalidate,
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: ['pokemon', runId] })
+      const previous = queryClient.getQueryData<CapturedPokemon[]>(['pokemon', runId])
+      queryClient.setQueryData<CapturedPokemon[]>(['pokemon', runId], (old = []) =>
+        old.filter((pk) => pk.id !== p.id)
+      )
+      return { previous }
+    },
+    onError: (_err, _body, context) => {
+      if (context?.previous) queryClient.setQueryData(['pokemon', runId], context.previous)
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['pokemon', runId] }),
   })
 
   const commitEdit = () => {
@@ -1032,19 +1065,44 @@ function QueueRow({ entry, position, runId, onAssign }: { entry: QueuedNickname;
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['nicknameQueue', runId] })
 
+  const optimisticStatus = (newStatus: QueuedNicknameStatus) => async () => {
+    await queryClient.cancelQueries({ queryKey: ['nicknameQueue', runId] })
+    const previous = queryClient.getQueryData<QueuedNickname[]>(['nicknameQueue', runId])
+    queryClient.setQueryData<QueuedNickname[]>(['nicknameQueue', runId], (old = []) =>
+      old.map((e) => (e.id === entry.id ? { ...e, status: newStatus } : e))
+    )
+    return { previous }
+  }
+  const onError = (_err: unknown, _vars: unknown, context: { previous?: QueuedNickname[] } | undefined) => {
+    if (context?.previous) queryClient.setQueryData(['nicknameQueue', runId], context.previous)
+  }
+
   const { mutate: skip } = useMutation({
     mutationFn: () => api.nicknameQueue.update(entry.id, { status: 'skipped' }),
-    onSuccess: invalidate,
+    onMutate: optimisticStatus('skipped'),
+    onError,
+    onSettled: invalidate,
   })
 
   const { mutate: restore } = useMutation({
     mutationFn: () => api.nicknameQueue.update(entry.id, { status: 'pending' }),
-    onSuccess: invalidate,
+    onMutate: optimisticStatus('pending'),
+    onError,
+    onSettled: invalidate,
   })
 
   const { mutate: remove } = useMutation({
     mutationFn: () => api.nicknameQueue.delete(entry.id),
-    onSuccess: invalidate,
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: ['nicknameQueue', runId] })
+      const previous = queryClient.getQueryData<QueuedNickname[]>(['nicknameQueue', runId])
+      queryClient.setQueryData<QueuedNickname[]>(['nicknameQueue', runId], (old = []) =>
+        old.filter((e) => e.id !== entry.id)
+      )
+      return { previous }
+    },
+    onError,
+    onSettled: invalidate,
   })
 
   return (

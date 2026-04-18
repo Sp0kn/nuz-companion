@@ -12,7 +12,10 @@ function startPythonBackend(): void {
 
   // In production, spawn the PyInstaller-bundled executable
   const backendExe = join(process.resourcesPath, 'backend', 'backend.exe')
-  pythonProcess = spawn(backendExe, [], { stdio: 'pipe' })
+  pythonProcess = spawn(backendExe, [], {
+    stdio: 'pipe',
+    env: { ...process.env, NUZ_DATA_DIR: getDataDir() },
+  })
   pythonProcess.stdout?.on('data', (data) => console.log(`[backend] ${data}`))
   pythonProcess.stderr?.on('data', (data) => console.error(`[backend] ${data}`))
 }
@@ -43,10 +46,14 @@ function createWindow(): void {
   }
 }
 
-function getDbPath(): string {
+function getDataDir(): string {
   return app.isPackaged
-    ? join(process.resourcesPath, 'backend', 'nuz_companion.db')
-    : join(app.getAppPath(), 'backend', 'nuz_companion.db')
+    ? app.getPath('userData')
+    : join(app.getAppPath(), 'backend')
+}
+
+function getDbPath(): string {
+  return join(getDataDir(), 'nuz_companion.db')
 }
 
 function registerIpcHandlers(): void {

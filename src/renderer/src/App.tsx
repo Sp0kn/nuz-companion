@@ -6,9 +6,8 @@ import RunDetail from './pages/RunDetail'
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      refetchInterval: 5000, // live updates during stream
       retry: false,
-      staleTime: 2000,
+      staleTime: 30_000, // static data stays fresh for 30s; live queries set their own interval
     },
   },
 })

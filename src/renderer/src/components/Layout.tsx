@@ -379,7 +379,18 @@ function NavLevelCaps({ runId }: { runId: number }) {
   const { mutate: update } = useMutation({
     mutationFn: ({ id, body }: { id: number; body: Parameters<typeof api.runLevelCaps.update>[1] }) =>
       api.runLevelCaps.update(id, body),
-    onSuccess: invalidate,
+    onMutate: async ({ id, body }) => {
+      await queryClient.cancelQueries({ queryKey: ['runLevelCaps', runId] })
+      const previous = queryClient.getQueryData<RunLevelCap[]>(['runLevelCaps', runId])
+      queryClient.setQueryData<RunLevelCap[]>(['runLevelCaps', runId], (old = []) =>
+        old.map((c) => (c.id === id ? { ...c, ...body } : c))
+      )
+      return { previous }
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) queryClient.setQueryData(['runLevelCaps', runId], context.previous)
+    },
+    onSettled: invalidate,
   })
   const { mutate: create } = useMutation({
     mutationFn: (body: Parameters<typeof api.runLevelCaps.create>[0]) =>
@@ -388,7 +399,18 @@ function NavLevelCaps({ runId }: { runId: number }) {
   })
   const { mutate: remove } = useMutation({
     mutationFn: (id: number) => api.runLevelCaps.delete(id),
-    onSuccess: invalidate,
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: ['runLevelCaps', runId] })
+      const previous = queryClient.getQueryData<RunLevelCap[]>(['runLevelCaps', runId])
+      queryClient.setQueryData<RunLevelCap[]>(['runLevelCaps', runId], (old = []) =>
+        old.filter((c) => c.id !== id)
+      )
+      return { previous }
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) queryClient.setQueryData(['runLevelCaps', runId], context.previous)
+    },
+    onSettled: invalidate,
   })
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
@@ -999,7 +1021,7 @@ function BackendStatus() {
   const { data, isError } = useQuery({
     queryKey: ['health'],
     queryFn: () => fetch('http://localhost:8000/health').then((r) => r.json()),
-    refetchInterval: 5000,
+    refetchInterval: 15_000,
     retry: false,
   })
 

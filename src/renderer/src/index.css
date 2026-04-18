@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 @theme {
+  --transition-duration-DEFAULT: 75ms; /* snappier hover feedback everywhere */
   --color-bg:           var(--bg);
   --color-surface:      var(--surface);
   --color-surface-2:    var(--surface-2);

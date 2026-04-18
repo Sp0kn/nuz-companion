@@ -20,6 +20,7 @@ __pycache__/
 *.pyc
 .venv/
 backend/dist/
+backend/build/
 
 # Database
 *.db
@@ -27,9 +28,15 @@ backend/dist/
 
 # Build artifacts
 tsconfig.web.tsbuildinfo
+tsconfig.node.tsbuildinfo
+electron.vite.config.*.mjs
 
-# Claude Code memory
+# Claude Code
 .claude/
+claude.md
 
 # Secrets — never commit real credentials
 backend/.env
+
+# Other
+*.png

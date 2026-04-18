@@ -12,7 +12,7 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-SPRITE_CACHE_DIR = Path(__file__).parent / ".sprite_cache"
+SPRITE_CACHE_DIR = Path(os.environ.get("NUZ_DATA_DIR", str(Path(__file__).parent))) / ".sprite_cache"
 _lock = threading.Lock()
 
 
