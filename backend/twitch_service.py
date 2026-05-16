@@ -75,6 +75,11 @@ class TwitchService:
         # Currently selected run (updated by frontend)
         self._current_run_id: int | None = None
 
+        # EventSub deduplication — Twitch can deliver the same notification more than once
+        self._seen_eventsub_ids: set[str] = set()
+        self._seen_eventsub_queue: list[str] = []  # keeps insertion order for eviction
+        self._seen_eventsub_max = 200
+
     # -------------------------------------------------------------------------
     # Public API
     # -------------------------------------------------------------------------
@@ -324,10 +329,24 @@ class TwitchService:
             await asyncio.sleep(10)
 
     async def _handle_eventsub(self, msg: dict):
-        msg_type = msg.get("metadata", {}).get("message_type")
+        metadata = msg.get("metadata", {})
+        msg_type = metadata.get("message_type")
         if msg_type != "notification":
             return
-        event_type = msg["metadata"].get("subscription_type")
+
+        # Deduplicate — Twitch may deliver the same notification more than once
+        msg_id = metadata.get("message_id", "")
+        if msg_id:
+            if msg_id in self._seen_eventsub_ids:
+                logger.debug("Skipping duplicate EventSub message %s", msg_id)
+                return
+            self._seen_eventsub_ids.add(msg_id)
+            self._seen_eventsub_queue.append(msg_id)
+            if len(self._seen_eventsub_queue) > self._seen_eventsub_max:
+                evicted = self._seen_eventsub_queue.pop(0)
+                self._seen_eventsub_ids.discard(evicted)
+
+        event_type = metadata.get("subscription_type")
         payload = msg.get("payload", {}).get("event", {})
 
         if event_type == "channel.channel_points_custom_reward_redemption.add":
@@ -368,6 +387,7 @@ class TwitchService:
             redeemed_at = datetime.now(timezone.utc)
         try:
             from models import RedemptionType, QueuedNickname
+            from routers.nickname_queue import compute_insert_sort_order
             with self._db_session_factory() as db:
                 rt = db.query(RedemptionType).filter(
                     RedemptionType.run_id == self._current_run_id,
@@ -376,12 +396,14 @@ class TwitchService:
                 if not rt:
                     logger.warning(f"'Channel Reward' redemption type not found for run {self._current_run_id}")
                     return
+                sort_order = compute_insert_sort_order(db, self._current_run_id, rt.priority)
                 db.add(QueuedNickname(
                     run_id=self._current_run_id,
                     redemption_type_id=rt.id,
                     nickname=display_name,
                     redeemed_by=username,
                     redeemed_at=redeemed_at,
+                    sort_order=sort_order,
                 ))
                 db.commit()
                 logger.info(f"Auto-queued nickname '{display_name}' for run {self._current_run_id}")
@@ -429,6 +451,7 @@ class TwitchService:
         username = payload.get("user_login", "")
         try:
             from models import RedemptionType, QueuedNickname
+            from routers.nickname_queue import compute_insert_sort_order
             with self._db_session_factory() as db:
                 rt = db.query(RedemptionType).filter(
                     RedemptionType.run_id == self._current_run_id,
@@ -437,12 +460,14 @@ class TwitchService:
                 if not rt:
                     logger.warning(f"'Twitch Sub' redemption type not found for run {self._current_run_id}")
                     return
+                sort_order = compute_insert_sort_order(db, self._current_run_id, rt.priority)
                 db.add(QueuedNickname(
                     run_id=self._current_run_id,
                     redemption_type_id=rt.id,
                     nickname="",
                     redeemed_by=username,
                     redeemed_at=datetime.now(timezone.utc),
+                    sort_order=sort_order,
                 ))
                 db.commit()
                 logger.info(f"Sub nickname slot queued for {username}")
@@ -463,13 +488,16 @@ class TwitchService:
                 ).first()
                 if not rt:
                     return
+                from routers.nickname_queue import compute_insert_sort_order
                 for _ in range(total):
+                    sort_order = compute_insert_sort_order(db, self._current_run_id, rt.priority)
                     db.add(QueuedNickname(
                         run_id=self._current_run_id,
                         redemption_type_id=rt.id,
                         nickname="",
                         redeemed_by=gifter,
                         redeemed_at=datetime.now(timezone.utc),
+                        sort_order=sort_order,
                     ))
                 db.commit()
                 logger.info(f"Gift sub: {total} nickname slot(s) queued for gifter {gifter}")

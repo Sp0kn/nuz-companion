@@ -152,6 +152,19 @@ def _truncate_text(draw, text: str, max_px: int, font: object) -> str:
     return "…"
 
 
+# ── Deletion helpers ─────────────────────────────────────────────────────────
+
+def delete_individual_image(*, run_name: str, display_name: str, output_dir: str) -> None:
+    """Delete the individual PNG for a pokemon (call before regenerating with a new name)."""
+    filename = f"{_sanitize_filename(run_name)}_{_sanitize_filename(display_name)}.png"
+    path = Path(output_dir) / "Captured Pokemon" / filename
+    try:
+        path.unlink(missing_ok=True)
+        logger.info("Deleted individual image: %s", filename)
+    except Exception as exc:
+        logger.warning("Could not delete individual image %s: %s", filename, exc)
+
+
 # ── Individual pokemon image ─────────────────────────────────────────────────
 
 def generate_individual_image(
@@ -161,6 +174,7 @@ def generate_individual_image(
     nickname: str | None,
     twitch_username: str | None,
     impatience: int = 0,
+    fainted: bool = False,
     output_dir: str,
 ) -> None:
     """Generate a 500×500 transparent PNG for a single captured pokemon."""
@@ -179,10 +193,29 @@ def generate_individual_image(
 
         sprite = _fetch_sprite(pokemon_name)
         if sprite:
+            if fainted:
+                # Desaturate: convert to grayscale then back to RGBA
+                sprite = sprite.convert("LA").convert("RGBA")
             scaled = _scale_sprite(sprite, SPRITE_MAX)
             sx = (SIZE - scaled.width) // 2
             sy = SPRITE_Y + (SPRITE_MAX - scaled.height) // 2
             canvas.paste(scaled, (sx, sy), scaled)
+
+        if fainted:
+            # Semi-transparent dark tint over the sprite area
+            tint = Image.new("RGBA", (SIZE, SPRITE_MAX), (0, 0, 0, 90))
+            canvas.alpha_composite(tint, (0, SPRITE_Y))
+            # Skull emoji centred on the sprite
+            skull_font = _get_emoji_font(110)
+            skull = "💀"
+            bbox = draw.textbbox((0, 0), skull, font=skull_font)
+            sw, sh = bbox[2] - bbox[0], bbox[3] - bbox[1]
+            draw.text(
+                ((SIZE - sw) // 2, SPRITE_Y + (SPRITE_MAX - sh) // 2),
+                skull,
+                font=skull_font,
+                fill=(255, 255, 255, 210),
+            )
 
         display = f"{nickname} ({pokemon_name})" if nickname else pokemon_name
         display = _truncate_text(draw, display, SIZE - 20, font_name)

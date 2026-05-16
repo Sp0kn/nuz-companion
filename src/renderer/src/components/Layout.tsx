@@ -1018,14 +1018,24 @@ function TwitchAccountRow({ connected, displayName, onOAuth, onPasteToken, onDis
 }
 
 function BackendStatus() {
+  const queryClient = useQueryClient()
   const { data, isError } = useQuery({
     queryKey: ['health'],
     queryFn: () => fetch('http://localhost:8000/health').then((r) => r.json()),
-    refetchInterval: 15_000,
+    refetchInterval: 3_000,
     retry: false,
   })
 
   const online = !isError && data?.status === 'ok'
+  const prevOnlineRef = useRef<boolean | null>(null)
+
+  useEffect(() => {
+    if (prevOnlineRef.current === false && online) {
+      // Backend just came back online — flush all cached data so it reloads from DB
+      queryClient.invalidateQueries()
+    }
+    prevOnlineRef.current = online
+  }, [online, queryClient])
 
   return (
     <div className="px-5 py-3 border-t border-border flex items-center gap-2 text-xs text-muted">

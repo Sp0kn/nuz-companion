@@ -27,6 +27,7 @@ def _schedule_individual(bg: BackgroundTasks, pokemon: Pokemon, run_name: str, o
         nickname=pokemon.nickname,
         twitch_username=pokemon.twitch_username,
         impatience=pokemon.impatience,
+        fainted=pokemon.status == PokemonStatus.fainted,
         output_dir=output_dir,
     )
 
@@ -76,12 +77,12 @@ def create_pokemon(body: PokemonCreate, background_tasks: BackgroundTasks, db: S
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
 
-    zone = db.query(Zone).filter(Zone.id == body.zone_id).first()
-    if not zone:
-        raise HTTPException(status_code=404, detail="Zone not found")
-
-    if zone.game_id != run.game_id:
-        raise HTTPException(status_code=400, detail="Zone does not belong to the run's game")
+    if body.zone_id is not None:
+        zone = db.query(Zone).filter(Zone.id == body.zone_id).first()
+        if not zone:
+            raise HTTPException(status_code=404, detail="Zone not found")
+        if zone.game_id != run.game_id:
+            raise HTTPException(status_code=400, detail="Zone does not belong to the run's game")
 
     pokemon = Pokemon(
         run_id=body.run_id,
@@ -99,7 +100,7 @@ def create_pokemon(body: PokemonCreate, background_tasks: BackgroundTasks, db: S
     db.refresh(pokemon)
 
     output_dir = _image_path(db)
-    if output_dir:
+    if output_dir and pokemon.status == PokemonStatus.alive:
         _schedule_individual(background_tasks, pokemon, run.name, output_dir)
 
     return pokemon
@@ -135,6 +136,9 @@ def update_pokemon(pokemon_id: int, body: PokemonUpdate, background_tasks: Backg
     ])
     was_on_team = bool(pokemon.on_team)
 
+    # Capture old display name before applying changes (used to delete the stale image)
+    old_display_name = pokemon.nickname or pokemon.pokemon_name
+
     if body.pokemon_name is not None:
         pokemon.pokemon_name = body.pokemon_name
     if body.nickname is not None:
@@ -154,7 +158,16 @@ def update_pokemon(pokemon_id: int, body: PokemonUpdate, background_tasks: Backg
     if output_dir:
         run = db.query(Run).filter(Run.id == pokemon.run_id).first()
         run_name = run.name if run else "unknown"
-        _schedule_individual(background_tasks, pokemon, run_name, output_dir)
+        new_display_name = pokemon.nickname or pokemon.pokemon_name
+        if display_fields_changed and new_display_name != old_display_name:
+            background_tasks.add_task(
+                image_service.delete_individual_image,
+                run_name=run_name,
+                display_name=old_display_name,
+                output_dir=output_dir,
+            )
+        if pokemon.status in (PokemonStatus.alive, PokemonStatus.fainted):
+            _schedule_individual(background_tasks, pokemon, run_name, output_dir)
         if on_team_changed or (was_on_team and display_fields_changed):
             _schedule_team(background_tasks, pokemon.run_id, run_name, output_dir, db)
 
@@ -162,12 +175,27 @@ def update_pokemon(pokemon_id: int, body: PokemonUpdate, background_tasks: Backg
 
 
 @router.delete("/{pokemon_id}", status_code=204)
-def delete_pokemon(pokemon_id: int, db: Session = Depends(get_db)):
+def delete_pokemon(pokemon_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     pokemon = db.query(Pokemon).filter(Pokemon.id == pokemon_id).first()
     if not pokemon:
         raise HTTPException(status_code=404, detail="Pokemon not found")
+
+    # Capture info for image cleanup before deleting the row
+    display_name = pokemon.nickname or pokemon.pokemon_name
+    run = db.query(Run).filter(Run.id == pokemon.run_id).first()
+    run_name = run.name if run else None
+    output_dir = _image_path(db)
+
     db.delete(pokemon)
     db.commit()
+
+    if output_dir and run_name:
+        background_tasks.add_task(
+            image_service.delete_individual_image,
+            run_name=run_name,
+            display_name=display_name,
+            output_dir=output_dir,
+        )
 
 
 @router.post("/roll", response_model=list[PokemonOut])
@@ -219,14 +247,15 @@ def confirm_team(body: dict, background_tasks: BackgroundTasks, db: Session = De
         if p.id in team_id_set and p.status != PokemonStatus.alive:
             raise HTTPException(400, f"{p.pokemon_name} is not alive")
 
-    # Apply: everyone gets +1 impatience; new team gets reset to 0 and on_team=True
+    # Apply: alive non-team pokemon get +1 impatience; new team resets to 0; dead pokemon unchanged
     for p in all_pokemon:
         if p.id in team_id_set:
             p.on_team = True
             p.impatience = 0
         else:
             p.on_team = False
-            p.impatience = p.impatience + 1
+            if p.status == PokemonStatus.alive:
+                p.impatience = p.impatience + 1
 
     db.commit()
     for p in all_pokemon:

@@ -7,7 +7,7 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: false,
-      staleTime: 30_000, // static data stays fresh for 30s; live queries set their own interval
+      staleTime: 0, // always consider data stale so it refetches when backend reconnects
     },
   },
 })

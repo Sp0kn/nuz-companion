@@ -140,6 +140,85 @@ def run_migrations():
             conn.commit()
         except Exception:
             pass
+        # sort_order for nickname queue manual reordering
+        try:
+            conn.execute(text("ALTER TABLE nickname_queue ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0"))
+            # Backfill: assign sort_order based on existing priority/redeemed_at order per run
+            conn.execute(text("""
+                UPDATE nickname_queue SET sort_order = (
+                    SELECT COUNT(*) FROM nickname_queue nq2
+                    JOIN redemption_types rt2 ON nq2.redemption_type_id = rt2.id
+                    JOIN redemption_types rt1 ON nickname_queue.redemption_type_id = rt1.id
+                    WHERE nq2.run_id = nickname_queue.run_id
+                    AND (rt2.priority < rt1.priority
+                         OR (rt2.priority = rt1.priority AND nq2.redeemed_at < nickname_queue.redeemed_at)
+                         OR (rt2.priority = rt1.priority AND nq2.redeemed_at = nickname_queue.redeemed_at AND nq2.id < nickname_queue.id))
+                )
+            """))
+            conn.commit()
+        except Exception:
+            pass
+        # Make zone_id nullable (pokemon logged without a zone)
+        zone_col = next(
+            (r for r in conn.execute(text("PRAGMA table_info(run_pokemon)")).fetchall() if r[1] == "zone_id"),
+            None,
+        )
+        if zone_col and zone_col[3] == 1:  # notnull=1 → need to recreate
+            conn.execute(text("""
+                CREATE TABLE run_pokemon_nullable_zone (
+                    id INTEGER PRIMARY KEY,
+                    run_id INTEGER NOT NULL REFERENCES runs(id),
+                    zone_id INTEGER REFERENCES zones(id),
+                    pokemon_name VARCHAR NOT NULL,
+                    nickname VARCHAR,
+                    twitch_username VARCHAR,
+                    status VARCHAR NOT NULL,
+                    impatience INTEGER NOT NULL DEFAULT 0,
+                    on_team INTEGER NOT NULL DEFAULT 0,
+                    created_at DATETIME,
+                    UNIQUE (run_id, zone_id)
+                )
+            """))
+            conn.execute(text("""
+                INSERT INTO run_pokemon_nullable_zone
+                SELECT id, run_id, zone_id, pokemon_name, nickname, twitch_username,
+                       status, impatience, on_team, created_at FROM run_pokemon
+            """))
+            conn.execute(text("DROP TABLE run_pokemon"))
+            conn.execute(text("ALTER TABLE run_pokemon_nullable_zone RENAME TO run_pokemon"))
+            conn.commit()
+        # Add missing zones to all Sinnoh games
+        _sinnoh_inserts = [
+            ("Oreburgh Gate",   "Oreburgh Mine"),
+            ("Floaroma Meadow", "Valley Windworks"),
+        ]
+        sinnoh_slugs = ("diamond", "pearl", "platinum", "brilliantdiamond", "shiningpearl")
+        for slug in sinnoh_slugs:
+            row = conn.execute(text("SELECT id FROM games WHERE slug = :s"), {"s": slug}).fetchone()
+            if not row:
+                continue
+            game_id = row[0]
+            for zone_name, after_zone in _sinnoh_inserts:
+                exists = conn.execute(
+                    text("SELECT 1 FROM zones WHERE game_id = :g AND name = :n"),
+                    {"g": game_id, "n": zone_name},
+                ).fetchone()
+                if exists:
+                    continue
+                anchor = conn.execute(
+                    text("SELECT sort_order FROM zones WHERE game_id = :g AND name = :n"),
+                    {"g": game_id, "n": after_zone},
+                ).fetchone()
+                insert_at = (anchor[0] + 1) if anchor else 999
+                conn.execute(
+                    text("UPDATE zones SET sort_order = sort_order + 1 WHERE game_id = :g AND sort_order >= :o"),
+                    {"g": game_id, "o": insert_at},
+                )
+                conn.execute(
+                    text("INSERT INTO zones (game_id, name, sort_order) VALUES (:g, :n, :o)"),
+                    {"g": game_id, "n": zone_name, "o": insert_at},
+                )
+        conn.commit()
 
 
 @asynccontextmanager

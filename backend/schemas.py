@@ -63,7 +63,7 @@ class RunOut(BaseModel):
 
 class PokemonCreate(BaseModel):
     run_id: int
-    zone_id: int
+    zone_id: int | None = None
     pokemon_name: str
     nickname: str | None = None
     status: PokemonStatus | None = None
@@ -81,7 +81,7 @@ class PokemonUpdate(BaseModel):
 class PokemonOut(BaseModel):
     id: int
     run_id: int
-    zone_id: int
+    zone_id: int | None
     pokemon_name: str
     nickname: str | None
     twitch_username: str | None
@@ -89,7 +89,7 @@ class PokemonOut(BaseModel):
     impatience: int
     on_team: bool
     created_at: datetime
-    zone: ZoneOut
+    zone: ZoneOut | None
 
     model_config = {"from_attributes": True}
 
@@ -137,12 +137,14 @@ class QueuedNicknameCreate(BaseModel):
 class QueuedNicknameUpdate(BaseModel):
     status: QueuedNicknameStatus | None = None
     assigned_to_id: int | None = None
+    nickname: str | None = None
 
 
 class QueuedNicknameOut(BaseModel):
     id: int
     run_id: int
     redemption_type_id: int
+    sort_order: int
     nickname: str
     redeemed_by: str | None
     redeemed_at: datetime | None

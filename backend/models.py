@@ -72,7 +72,7 @@ class Pokemon(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     run_id: Mapped[int] = mapped_column(ForeignKey("runs.id"), nullable=False)
-    zone_id: Mapped[int] = mapped_column(ForeignKey("zones.id"), nullable=False)
+    zone_id: Mapped[int | None] = mapped_column(ForeignKey("zones.id"), nullable=True)
     pokemon_name: Mapped[str] = mapped_column(String, nullable=False)
     nickname: Mapped[str | None] = mapped_column(String, nullable=True)
     twitch_username: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -84,7 +84,7 @@ class Pokemon(Base):
     )
 
     run: Mapped["Run"] = relationship(back_populates="pokemon")
-    zone: Mapped["Zone"] = relationship()
+    zone: Mapped["Zone | None"] = relationship()
 
 
 class PokemonSpecies(Base):
@@ -155,6 +155,7 @@ class QueuedNickname(Base):
     redeemed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # when it happened on Twitch
     status: Mapped[str] = mapped_column(String, default=QueuedNicknameStatus.pending, nullable=False)
     assigned_to_id: Mapped[int | None] = mapped_column(ForeignKey("run_pokemon.id"), nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc)
     )

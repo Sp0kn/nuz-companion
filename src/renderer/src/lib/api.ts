@@ -95,7 +95,7 @@ export interface Zone {
 export interface CapturedPokemon {
   id: number
   run_id: number
-  zone_id: number
+  zone_id: number | null
   pokemon_name: string
   nickname: string | null
   twitch_username: string | null
@@ -103,7 +103,7 @@ export interface CapturedPokemon {
   impatience: number
   on_team: boolean
   created_at: string
-  zone: Zone
+  zone: Zone | null
 }
 
 export interface AppSettings {
@@ -132,6 +132,7 @@ export interface QueuedNickname {
   id: number
   run_id: number
   redemption_type_id: number
+  sort_order: number
   nickname: string
   redeemed_by: string | null
   redeemed_at: string | null
@@ -158,7 +159,7 @@ export const api = {
   },
   pokemon: {
     list: (runId: number) => get<CapturedPokemon[]>(`/pokemon?run_id=${runId}`),
-    create: (body: { run_id: number; zone_id: number; pokemon_name: string; nickname?: string; status?: PokemonStatus }) =>
+    create: (body: { run_id: number; zone_id?: number | null; pokemon_name: string; nickname?: string; status?: PokemonStatus }) =>
       post<CapturedPokemon>('/pokemon', body),
     update: (id: number, body: { pokemon_name?: string; nickname?: string | null; twitch_username?: string | null; status?: PokemonStatus; impatience?: number; on_team?: boolean }) =>
       patch<CapturedPokemon>(`/pokemon/${id}`, body),
@@ -181,9 +182,10 @@ export const api = {
       get<QueuedNickname[]>(`/nickname-queue?run_id=${runId}`),
     create: (body: { run_id: number; redemption_type_id: number; nickname: string; redeemed_by?: string; redeemed_at?: string }) =>
       post<QueuedNickname>('/nickname-queue', body),
-    update: (id: number, body: { status?: QueuedNicknameStatus; assigned_to_id?: number }) =>
+    update: (id: number, body: { status?: QueuedNicknameStatus; assigned_to_id?: number; nickname?: string }) =>
       patch<QueuedNickname>(`/nickname-queue/${id}`, body),
     delete: (id: number) => del(`/nickname-queue/${id}`),
+    reorder: (ids: number[]) => post<void>('/nickname-queue/reorder', { ids }),
   },
   redemptionTypes: {
     list: (runId: number) => get<RedemptionType[]>(`/redemption-types?run_id=${runId}`),

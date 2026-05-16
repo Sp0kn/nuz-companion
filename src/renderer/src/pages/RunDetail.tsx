@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import type React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, CapturedPokemon, QueuedNickname, PokemonStatus, RunStatus, Run, Zone } from '../lib/api'
@@ -9,6 +9,14 @@ import AssignNicknameModal from '../components/AssignNicknameModal'
 import ManageRedemptionTypesModal from '../components/ManageRedemptionTypesModal'
 import { getPokemonSpriteUrl } from '../lib/pokemonUtils'
 import PokemonCombobox from '../components/PokemonCombobox'
+import {
+  DndContext, closestCenter, PointerSensor, useSensor, useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext, useSortable, verticalListSortingStrategy, arrayMove,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 
 export default function RunDetail() {
   const { selectedRunId, setSelectedRunId } = useRunStore()
@@ -45,6 +53,30 @@ export default function RunDetail() {
   const [pokemonFilter, setPokemonFilter] = useState('')
   const [queueFilter, setQueueFilter] = useState('')
   const [showRoll, setShowRoll] = useState(false)
+
+  // Queue drag-and-drop order state
+  const [orderedQueueIds, setOrderedQueueIds] = useState<number[]>([])
+  const prevQueueRef = useRef<QueuedNickname[]>([])
+  useEffect(() => {
+    const prevIds = prevQueueRef.current.map((e) => e.id).join(',')
+    const nextIds = queue.map((e) => e.id).join(',')
+    if (prevIds !== nextIds) {
+      setOrderedQueueIds(queue.map((e) => e.id))
+      prevQueueRef.current = queue
+    }
+  }, [queue])
+
+  const queueSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
+
+  const handleQueueDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIndex = orderedQueueIds.indexOf(active.id as number)
+    const newIndex = orderedQueueIds.indexOf(over.id as number)
+    const newOrder = arrayMove(orderedQueueIds, oldIndex, newIndex)
+    setOrderedQueueIds(newOrder)
+    api.nicknameQueue.reorder(newOrder)
+  }
 
   if (selectedRunId === null || !currentRun) {
     return (
@@ -223,9 +255,19 @@ export default function RunDetail() {
                   <Empty message={queueFilter ? 'No entries match your search.' : 'Queue is empty.'} />
                 ) : (
                   <div className="flex flex-col gap-2">
-                    {pending.map((entry, i) => (
-                      <QueueRow key={entry.id} entry={entry} position={i + 1} runId={selectedRunId} onAssign={() => setAssignEntry(entry)} />
-                    ))}
+                    <DndContext sensors={queueSensors} collisionDetection={closestCenter} onDragEnd={handleQueueDragEnd}>
+                      <SortableContext
+                        items={orderedQueueIds.filter((id) => pending.some((e) => e.id === id))}
+                        strategy={verticalListSortingStrategy}
+                      >
+                        {orderedQueueIds
+                          .map((id) => pending.find((e) => e.id === id))
+                          .filter((e): e is QueuedNickname => e !== undefined)
+                          .map((entry, i) => (
+                            <SortableQueueRow key={entry.id} entry={entry} position={i + 1} runId={selectedRunId} onAssign={() => setAssignEntry(entry)} />
+                          ))}
+                      </SortableContext>
+                    </DndContext>
                     {skipped.length > 0 && (
                       <>
                         {pending.length > 0 && <div className="border-t border-border my-1" />}
@@ -650,7 +692,7 @@ function CapturePokemonModal({ pokemon, runId, onClose }: { pokemon: CapturedPok
       <div className="bg-surface border border-border rounded-xl p-5 w-80 flex flex-col gap-4" onMouseDown={(e) => e.stopPropagation()}>
         <div>
           <h2 className="text-sm font-semibold text-text">Capture Pokémon</h2>
-          <p className="text-xs text-muted mt-0.5">{pokemon.zone.name}</p>
+          {pokemon.zone && <p className="text-xs text-muted mt-0.5">{pokemon.zone.name}</p>}
         </div>
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
           <div className="flex flex-col gap-1">
@@ -1058,10 +1100,21 @@ function StatusBadge({ status }: { status: PokemonStatus }) {
 
 // --- Queue Row ---
 
-function QueueRow({ entry, position, runId, onAssign }: { entry: QueuedNickname; position: number | null; runId: number; onAssign: () => void }) {
+function SortableQueueRow(props: { entry: QueuedNickname; position: number; runId: number; onAssign: () => void }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.entry.id })
+  return (
+    <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }}>
+      <QueueRow {...props} dragHandle={<span {...attributes} {...listeners} className="cursor-grab text-muted/40 hover:text-muted text-sm px-0.5 shrink-0 touch-none">⠿</span>} />
+    </div>
+  )
+}
+
+function QueueRow({ entry, position, runId, onAssign, dragHandle }: { entry: QueuedNickname; position: number | null; runId: number; onAssign: () => void; dragHandle?: React.ReactNode }) {
   const queryClient = useQueryClient()
   const timeAgo = entry.redeemed_at ? formatTimeAgo(entry.redeemed_at) : null
   const isSkipped = entry.status === 'skipped'
+  const [isEditing, setIsEditing] = useState(false)
+  const [editValue, setEditValue] = useState(entry.nickname)
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['nicknameQueue', runId] })
 
@@ -1105,13 +1158,59 @@ function QueueRow({ entry, position, runId, onAssign }: { entry: QueuedNickname;
     onSettled: invalidate,
   })
 
+  const { mutate: rename } = useMutation({
+    mutationFn: (nickname: string) => api.nicknameQueue.update(entry.id, { nickname }),
+    onMutate: async (nickname) => {
+      await queryClient.cancelQueries({ queryKey: ['nicknameQueue', runId] })
+      const previous = queryClient.getQueryData<QueuedNickname[]>(['nicknameQueue', runId])
+      queryClient.setQueryData<QueuedNickname[]>(['nicknameQueue', runId], (old = []) =>
+        old.map((e) => (e.id === entry.id ? { ...e, nickname } : e))
+      )
+      return { previous }
+    },
+    onError,
+    onSettled: invalidate,
+  })
+
+  const commitEdit = () => {
+    const trimmed = editValue.trim()
+    if (trimmed && trimmed !== entry.nickname) rename(trimmed)
+    setIsEditing(false)
+  }
+
+  if (isEditing) {
+    return (
+      <div className="bg-surface border border-accent rounded-lg px-3 py-2.5 flex items-center gap-3">
+        {dragHandle}
+        <span className="text-xs font-bold text-muted w-4 text-center shrink-0">{position ?? '—'}</span>
+        <input
+          autoFocus
+          value={editValue}
+          onChange={(e) => setEditValue(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') { setEditValue(entry.nickname); setIsEditing(false) } }}
+          className="flex-1 bg-surface-2 border border-border rounded-md px-2 py-1 text-sm text-text focus:outline-none focus:border-accent min-w-0"
+        />
+        <button onClick={commitEdit} className="text-xs text-alive hover:text-alive/80 transition-colors shrink-0">✓</button>
+        <button onClick={() => { setEditValue(entry.nickname); setIsEditing(false) }} className="text-xs text-muted hover:text-text transition-colors shrink-0">✕</button>
+      </div>
+    )
+  }
+
   return (
     <div className={`bg-surface border border-border rounded-lg px-3 py-2.5 flex items-center gap-3 group ${isSkipped ? 'opacity-50' : ''}`}>
+      {dragHandle ?? <span className="w-3 shrink-0" />}
       <span className="text-xs font-bold text-muted w-4 text-center shrink-0">
         {position ?? '—'}
       </span>
       <div className="flex-1 min-w-0">
-        <p className={`font-semibold text-sm truncate ${isSkipped ? 'text-muted line-through' : 'text-text'}`}>"{entry.nickname}"</p>
+        <div className="flex items-center gap-1.5">
+          <p className={`font-semibold text-sm truncate ${isSkipped ? 'text-muted line-through' : 'text-text'}`}>"{entry.nickname}"</p>
+          <button
+            onClick={() => { setEditValue(entry.nickname); setIsEditing(true) }}
+            className="text-xs text-muted opacity-0 group-hover:opacity-100 hover:text-text transition-opacity shrink-0"
+            title="Edit nickname"
+          >✏</button>
+        </div>
         <div className="flex items-center gap-1.5 mt-0.5">
           <span className="text-xs font-medium" style={{ color: entry.redemption_type.color }}>
             {entry.redemption_type.name}
@@ -1120,7 +1219,7 @@ function QueueRow({ entry, position, runId, onAssign }: { entry: QueuedNickname;
         </div>
         {timeAgo && <p className="text-xs text-muted mt-0.5">{timeAgo}</p>}
       </div>
-      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+      <div className="flex flex-col items-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
         {isSkipped ? (
           <button onClick={() => restore()} className="text-xs font-semibold text-muted hover:text-text transition-colors">Restore</button>
         ) : (
