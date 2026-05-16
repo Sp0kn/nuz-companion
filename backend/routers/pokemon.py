@@ -1,3 +1,4 @@
+import logging
 import random
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -8,6 +9,8 @@ from database import get_db
 from models import AppSettings, Pokemon, PokemonStatus, Run, Zone
 from schemas import PokemonCreate, PokemonUpdate, PokemonOut
 import image_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/pokemon", tags=["pokemon"])
 
@@ -32,12 +35,21 @@ def _schedule_individual(bg: BackgroundTasks, pokemon: Pokemon, run_name: str, o
     )
 
 
-def _schedule_team(bg: BackgroundTasks, run_id: int, run_name: str, output_dir: str, db: Session) -> None:
-    team = (
-        db.query(Pokemon)
-        .filter(Pokemon.run_id == run_id, Pokemon.on_team == True)  # noqa: E712
-        .all()
-    )
+def _schedule_team(
+    bg: BackgroundTasks,
+    run_id: int,
+    run_name: str,
+    output_dir: str,
+    db: Session,
+    team: list[Pokemon] | None = None,
+) -> None:
+    if team is None:
+        team = (
+            db.query(Pokemon)
+            .filter(Pokemon.run_id == run_id, Pokemon.on_team == True)  # noqa: E712
+            .all()
+        )
+    logger.info("Scheduling team image for run %r with %d pokemon: %s", run_name, len(team), [p.pokemon_name for p in team])
     bg.add_task(
         image_service.generate_team_image,
         pokemon_list=[
@@ -265,6 +277,11 @@ def confirm_team(body: dict, background_tasks: BackgroundTasks, db: Session = De
     if output_dir:
         run = db.query(Run).filter(Run.id == run_id).first()
         run_name = run.name if run else "unknown"
-        _schedule_team(background_tasks, run_id, run_name, output_dir, db)
+        # Pass the already-loaded team directly to avoid a second DB query
+        # (avoids any bool/int filter quirks after a mass update)
+        current_team = [p for p in all_pokemon if p.on_team]
+        _schedule_team(background_tasks, run_id, run_name, output_dir, db, team=current_team)
+    else:
+        logger.warning("Team image not generated: image_output_path is not configured in app settings")
 
     return all_pokemon

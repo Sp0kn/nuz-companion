@@ -94,7 +94,7 @@ export default function AssignNicknameModal({ entry, pokemon, runId, onClose }: 
                       ? <span className="ml-2 text-xs text-muted">already has "{p.nickname}"</span>
                       : <span className="ml-2 text-xs text-muted">no nickname</span>
                     }
-                    <p className="text-xs text-muted mt-0.5">{p.zone.name}</p>
+                    {p.zone && <p className="text-xs text-muted mt-0.5">{p.zone.name}</p>}
                   </div>
                   <span className={`text-xs opacity-0 group-hover:opacity-100 transition-opacity ${p.nickname ? 'text-accent' : 'text-alive'}`}>Assign →</span>
                 </button>
